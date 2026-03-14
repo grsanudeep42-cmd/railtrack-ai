@@ -4,15 +4,15 @@ Computes all 6 KPIs from real DB data.
 """
 import os
 from datetime import datetime, date, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 
 from database import get_db
-from models import Train, Conflict, Decision, DecisionSourceEnum, TrainStatusEnum, User
+from models import Train, Conflict, Decision, DecisionSourceEnum, TrainStatusEnum, User, PriorityEnum
 from auth_utils import get_current_user
 
 router = APIRouter()
@@ -113,3 +113,147 @@ async def get_analytics_kpis(
         throughput_today=throughput_today,
         override_rate=override_rate,
     )
+
+
+@router.get("/delay-chart")
+async def get_delay_chart(
+    period: int = 7,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns daily average delay mapped to express, freight, and local trains for last N days.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=period)
+    
+    query = (
+        select(
+            func.date_trunc('day', Train.created_at).label('day_date'),
+            func.avg(case((Train.priority == PriorityEnum.EXPRESS, Train.delay), else_=None)).label('express'),
+            func.avg(case((Train.priority == PriorityEnum.FREIGHT, Train.delay), else_=None)).label('freight'),
+            func.avg(case((Train.priority == PriorityEnum.LOCAL, Train.delay), else_=None)).label('local'),
+        )
+        .where(Train.created_at >= cutoff)
+        .group_by(func.date_trunc('day', Train.created_at))
+        .order_by(func.date_trunc('day', Train.created_at))
+    )
+    result = await db.execute(query)
+    rows = result.all()
+    
+    lookup = {row.day_date.date(): row for row in rows if row.day_date}
+    chart_data = []
+    
+    for i in range(period - 1, -1, -1):
+        d_obj = (datetime.utcnow() - timedelta(days=i)).date()
+        day_str = d_obj.strftime("%a")
+        
+        if d_obj in lookup:
+            r = lookup[d_obj]
+            chart_data.append({
+                "time": day_str,
+                "express": round(float(r.express or 0.0), 1),
+                "freight": round(float(r.freight or 0.0), 1),
+                "local": round(float(r.local or 0.0), 1),
+            })
+        else:
+            chart_data.append({
+                "time": day_str,
+                "express": 0.0,
+                "freight": 0.0,
+                "local": 0.0,
+            })
+            
+    return chart_data
+
+
+@router.get("/throughput-chart")
+async def get_throughput_chart(
+    period: int = 7,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns rolling count of trains processed each day, split by type.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=period)
+    
+    query = (
+        select(
+            func.date_trunc('day', Train.created_at).label('day_date'),
+            func.count(case((Train.priority == PriorityEnum.EXPRESS, Train.id), else_=None)).label('express'),
+            func.count(case((Train.priority == PriorityEnum.FREIGHT, Train.id), else_=None)).label('freight'),
+            func.count(case((Train.priority == PriorityEnum.LOCAL, Train.id), else_=None)).label('local'),
+        )
+        .where(Train.created_at >= cutoff)
+        .group_by(func.date_trunc('day', Train.created_at))
+        .order_by(func.date_trunc('day', Train.created_at))
+    )
+    result = await db.execute(query)
+    rows = result.all()
+    
+    lookup = {row.day_date.date(): row for row in rows if row.day_date}
+    chart_data = []
+    
+    for i in range(period - 1, -1, -1):
+        d_obj = (datetime.utcnow() - timedelta(days=i)).date()
+        day_str = d_obj.strftime("%a")
+        
+        if d_obj in lookup:
+            r = lookup[d_obj]
+            chart_data.append({
+                "time": day_str,
+                "express": r.express or 0,
+                "freight": r.freight or 0,
+                "local": r.local or 0,
+            })
+        else:
+            chart_data.append({
+                "time": day_str,
+                "express": 0,
+                "freight": 0,
+                "local": 0,
+            })
+            
+    return chart_data
+
+
+@router.get("/heatmap")
+async def get_conflict_heatmap(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns conflict clustering by Day of Week vs Hour, over all time. 
+    Format matching Recharts array matrix: [{day, hour, value}]
+    """
+    query = (
+        select(
+            func.extract('isodow', Conflict.detected_at).label('dow'),
+            func.extract('hour', Conflict.detected_at).label('hour'),
+            func.count(Conflict.id).label('val')
+        )
+        .group_by(
+            func.extract('isodow', Conflict.detected_at),
+            func.extract('hour', Conflict.detected_at)
+        )
+    )
+    result = await db.execute(query)
+    rows = result.all()
+    
+    days_map = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'}
+    matrix = {(d, h): 0 for d in range(1, 8) for h in range(24)}
+            
+    for row in rows:
+        matrix[(int(row.dow), int(row.hour))] = row.val
+        
+    chart_data = []
+    for d in range(1, 8):
+        day_str = days_map[d]
+        for h in range(24):
+            chart_data.append({
+                "day": day_str,
+                "hour": h,
+                "value": matrix[(d, h)]
+            })
+            
+    return chart_data

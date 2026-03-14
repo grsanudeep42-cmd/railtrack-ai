@@ -102,6 +102,46 @@ export default function AnalyticsPage() {
     refetchInterval: 30000,
   });
 
+  // ── Fetch real Chart Data ────────────────────────────────────────────────
+  const { data: delayData = [], isLoading: delayLoading } = useQuery({
+    queryKey: ['analytics-delay', 7],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch('http://localhost:8000/api/analytics/delay-chart?period=7', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      return res.json() as Promise<any[]>;
+    }
+  });
+
+  const { data: throughputData = [], isLoading: throughputLoading } = useQuery({
+    queryKey: ['analytics-throughput', 7],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch('http://localhost:8000/api/analytics/throughput-chart?period=7', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      return res.json() as Promise<any[]>;
+    }
+  });
+
+  const { data: heatmapData = [], isLoading: heatmapLoading } = useQuery({
+    queryKey: ['analytics-heatmap'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch('http://localhost:8000/api/analytics/heatmap', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      return res.json() as Promise<{day: string, hour: number, value: number}[]>;
+    }
+  });
+
   // Custom tooltips
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -241,34 +281,42 @@ export default function AnalyticsPage() {
                   <span style={{ color: '#6366F1' }}>● Local</span>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={DELAY_CHART}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                  <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {delayLoading ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={delayData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                    <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             <div className="panel" style={{ padding: '24px', height: '360px', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
                 <div className="panel-header">Daily Throughput (Trains Scanned)</div>
               </div>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={THROUGHPUT_CHART}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                  <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                  <Bar dataKey="express" stackId="a" fill="#00D4FF" radius={[0, 0, 4, 4]} />
-                  <Bar dataKey="freight" stackId="a" fill="#F59E0B" />
-                  <Bar dataKey="local" stackId="a" fill="#6366F1" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {throughputLoading ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={throughputData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                    <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Bar dataKey="express" stackId="a" fill="#00D4FF" radius={[0, 0, 4, 4]} />
+                    <Bar dataKey="freight" stackId="a" fill="#F59E0B" />
+                    <Bar dataKey="local" stackId="a" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
           </div>
@@ -308,11 +356,15 @@ export default function AnalyticsPage() {
                 <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 1fr)', gap: '4px' }}>
                   {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
                     <div key={d} style={{ display: 'grid', gridTemplateColumns: 'repeat(24, 1fr)', gap: '4px' }}>
-                      {CONFLICT_HEATMAP.filter(h => h.day === d).map((h, i) => (
+                      {heatmapLoading ? (
+                        Array.from({ length: 24 }).map((_, i) => (
+                           <div key={i} style={{ background: 'var(--bg-elevated)', borderRadius: '2px' }} />
+                        ))
+                      ) : heatmapData.filter(h => h.day === d).map((h, i) => (
                         <div key={i} title={`${h.day} ${h.hour}:00 - ${h.value} conflicts`} style={{
-                          background: `rgba(239, 68, 68, ${Math.min(h.value / 8, 1)})`,
+                          background: `rgba(239, 68, 68, ${Math.min(h.value / 4, 1)})`,
                           borderRadius: '2px',
-                          border: `1px solid rgba(239, 68, 68, ${Math.min(h.value / 4, 1)})`,
+                          border: `1px solid rgba(239, 68, 68, ${Math.min(h.value / 2, 1)})`,
                           minWidth: '0',
                         }} />
                       ))}
