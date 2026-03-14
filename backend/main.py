@@ -22,7 +22,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import create_all_tables
-from routers import auth, trains, conflicts, simulate, analytics
+from routers import auth, trains, conflicts, simulate, analytics, admin, admin
 from ws.hub import router as websocket_router
 from auth_utils import verify_token
 
