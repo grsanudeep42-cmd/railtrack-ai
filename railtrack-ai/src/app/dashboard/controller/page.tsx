@@ -130,7 +130,7 @@ export default function ControllerDashboard() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      const res = await fetch('http://localhost:8000/api/trains/?section=NR-42', {
+      const res = await fetch(`http://localhost:8000/api/trains/?section=${user?.section || 'NR-42'}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
