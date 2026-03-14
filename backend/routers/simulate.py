@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from datetime import datetime
 
 from database import get_db
 from models import Train, SimulationResult, User
@@ -61,9 +63,9 @@ async def run_simulation(
     # Fetch trains from DB
     if not req.train_ids:
         # If None or empty list, fetch all trains for section NR-42 defaults
-        result = await db.execute(select(Train).where(Train.section == "NR-42"))
+        result = await db.execute(select(Train).where(Train.section == "NR-42").options(selectinload(Train.schedules)))
     else:
-        result = await db.execute(select(Train).where(Train.id.in_(req.train_ids)))
+        result = await db.execute(select(Train).where(Train.id.in_(req.train_ids)).options(selectinload(Train.schedules)))
         
     trains_db = result.scalars().all()
 
@@ -74,12 +76,24 @@ async def run_simulation(
         )
 
     # Build solver-compatible train dicts
-    # distance is approximated from avg NR-42 corridor (571 km over typical run)
     solver_trains = []
     for tr in trains_db:
         speed = tr.speed if tr.speed and tr.speed > 0 else 60.0
-        distance = 300.0   # approx km on section for simulation purposes
-        scheduled_arrival = 0  # minutes from simulation start (t=0)
+        
+        if tr.schedules:
+            sorted_schedules = sorted(tr.schedules, key=lambda s: s.sequence)
+            distance = sum((s.distance_km or 0.0) for s in sorted_schedules)
+            
+            first_dep = sorted_schedules[0].departure_time
+            if first_dep:
+                now_dt = datetime.now(first_dep.tzinfo)
+                scheduled_arrival = int((first_dep - now_dt).total_seconds())
+            else:
+                scheduled_arrival = 0
+        else:
+            distance = 300.0
+            scheduled_arrival = 0
+
         solver_trains.append({
             "id":                tr.id,
             "name":              tr.name,
