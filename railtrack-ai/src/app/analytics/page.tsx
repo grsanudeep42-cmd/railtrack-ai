@@ -2,8 +2,9 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
 import {
-  MOCK_KPI, SPARKLINE_DELAY, SPARKLINE_PUNCTUALITY, SPARKLINE_THROUGHPUT,
+  SPARKLINE_DELAY, SPARKLINE_PUNCTUALITY, SPARKLINE_THROUGHPUT,
   SPARKLINE_CONFLICTS, SPARKLINE_OVERRIDE, SPARKLINE_AI,
   DELAY_CHART, THROUGHPUT_CHART, AI_ACCEPTANCE_CHART, CONFLICT_HEATMAP,
   MOCK_INCIDENTS
@@ -12,6 +13,11 @@ import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
+
+function getClientToken() {
+  const match = document.cookie.match(/(?:^|;\s*)railtrack_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 function Sparkline({ data, color }: { data: number[], color: string }) {
   const chartData = data.map((val, i) => ({ i, val }));
@@ -45,8 +51,8 @@ function AnimatedNumber({ value, suffix = '', precision = 1 }: { value: number; 
   return <span>{disp.toFixed(precision)}{suffix}</span>;
 }
 
-function KPICard({ label, value, suffix = '', precision = 1, delta, data, color }: { label: string, value: number, suffix?: string, precision?: number, delta: number, data: number[], color: string }) {
-  const isPositiveGood = ['punctuality', 'throughput', 'aiAcceptance'].includes(label.toLowerCase());
+function KPICard({ label, value, suffix = '', precision = 1, delta, data, color, loading = false }: { label: string, value: number, suffix?: string, precision?: number, delta: number, data: number[], color: string, loading?: boolean }) {
+  const isPositiveGood = ['punctuality', 'throughput', 'aiAcceptance', 'conflicts resolved', 'ai acceptance'].includes(label.toLowerCase());
   const isGood = isPositiveGood ? delta > 0 : delta < 0;
   return (
     <div className="panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -57,12 +63,14 @@ function KPICard({ label, value, suffix = '', precision = 1, delta, data, color 
         <Sparkline data={data} color={color} />
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-        <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '32px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
-          <AnimatedNumber value={value} suffix={suffix} precision={precision} />
+        <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '32px', fontWeight: 700, color: loading ? 'var(--text-muted)' : 'var(--text-primary)', lineHeight: 1 }}>
+          {loading ? '—' : <AnimatedNumber value={value} suffix={suffix} precision={precision} />}
         </div>
-        <div className={isGood ? 'badge-safe' : 'badge-danger'} style={{ fontSize: '10px', marginBottom: '6px' }}>
-          {delta > 0 ? '+' : ''}{delta}{['throughput'].includes(label.toLowerCase()) ? '' : '%'}
-        </div>
+        {!loading && (
+          <div className={isGood ? 'badge-safe' : delta === 0 ? 'badge-rail' : 'badge-danger'} style={{ fontSize: '10px', marginBottom: '6px' }}>
+            {delta > 0 ? '+' : ''}{delta}{['throughput', 'conflicts resolved'].includes(label.toLowerCase()) ? '' : '%'}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -70,7 +78,30 @@ function KPICard({ label, value, suffix = '', precision = 1, delta, data, color 
 
 export default function AnalyticsPage() {
   const { user } = useAuth();
-  
+
+  // ── Fetch real KPIs from backend ─────────────────────────────────────────
+  const { data: kpiData, isLoading: kpiLoading } = useQuery({
+    queryKey: ['analytics-kpis'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) throw new Error('No token');
+      const res = await fetch('http://localhost:8000/api/analytics/kpis', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
+      if (!res.ok) throw new Error('Failed to fetch KPIs');
+      return res.json() as Promise<{
+        punctuality_pct: number;
+        avg_delay_minutes: number;
+        conflicts_resolved: number;
+        ai_acceptance_rate: number;
+        throughput_today: number;
+        override_rate: number;
+      }>;
+    },
+    refetchInterval: 30000,
+  });
+
   // Custom tooltips
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -142,12 +173,60 @@ export default function AnalyticsPage() {
 
           {/* KPI Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            <KPICard label="Avg Delay" value={MOCK_KPI.avgDelay} suffix="m" delta={MOCK_KPI.deltas.avgDelay} data={SPARKLINE_DELAY} color="var(--accent-warn)" />
-            <KPICard label="Punctuality" value={MOCK_KPI.punctuality} suffix="%" delta={MOCK_KPI.deltas.punctuality} data={SPARKLINE_PUNCTUALITY} color="var(--accent-safe)" />
-            <KPICard label="Throughput" value={MOCK_KPI.throughput} precision={0} delta={MOCK_KPI.deltas.throughput} data={SPARKLINE_THROUGHPUT} color="var(--accent-primary)" />
-            <KPICard label="Conflict Rate" value={MOCK_KPI.conflictRate} suffix="%" delta={MOCK_KPI.deltas.conflictRate} data={SPARKLINE_CONFLICTS} color="var(--accent-danger)" />
-            <KPICard label="Override Rate" value={MOCK_KPI.overrideRate} suffix="%" delta={MOCK_KPI.deltas.overrideRate} data={SPARKLINE_OVERRIDE} color="var(--text-muted)" />
-            <KPICard label="AI Acceptance" value={MOCK_KPI.aiAcceptance} suffix="%" delta={MOCK_KPI.deltas.aiAcceptance} data={SPARKLINE_AI} color="var(--accent-rail)" />
+            <KPICard 
+              label="Avg Delay" 
+              value={kpiData?.avg_delay_minutes ?? 0} 
+              suffix="m" 
+              delta={0} 
+              data={SPARKLINE_DELAY} 
+              color="var(--accent-warn)" 
+              loading={kpiLoading} 
+            />
+            <KPICard 
+              label="Punctuality" 
+              value={kpiData?.punctuality_pct ?? 0} 
+              suffix="%" 
+              delta={0} 
+              data={SPARKLINE_PUNCTUALITY} 
+              color="var(--accent-safe)" 
+              loading={kpiLoading} 
+            />
+            <KPICard 
+              label="Throughput" 
+              value={kpiData?.throughput_today ?? 0} 
+              precision={0} 
+              delta={0} 
+              data={SPARKLINE_THROUGHPUT} 
+              color="var(--accent-primary)" 
+              loading={kpiLoading} 
+            />
+            <KPICard 
+              label="Conflicts Resolved" 
+              value={kpiData?.conflicts_resolved ?? 0} 
+              precision={0}
+              delta={0} 
+              data={SPARKLINE_CONFLICTS} 
+              color="var(--accent-danger)" 
+              loading={kpiLoading} 
+            />
+            <KPICard 
+              label="Override Rate" 
+              value={kpiData?.override_rate ?? 0} 
+              suffix="%" 
+              delta={0} 
+              data={SPARKLINE_OVERRIDE} 
+              color="var(--text-muted)" 
+              loading={kpiLoading} 
+            />
+            <KPICard 
+              label="AI Acceptance" 
+              value={kpiData?.ai_acceptance_rate ?? 0} 
+              suffix="%" 
+              delta={0} 
+              data={SPARKLINE_AI} 
+              color="var(--accent-rail)" 
+              loading={kpiLoading} 
+            />
           </div>
 
           {/* Charts Row 1 */}

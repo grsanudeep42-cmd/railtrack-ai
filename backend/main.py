@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import create_all_tables
-from routers import auth, trains, conflicts, simulate
+from routers import auth, trains, conflicts, simulate, analytics
 from ws.hub import router as websocket_router
 from auth_utils import verify_token
 
@@ -47,10 +47,11 @@ app.add_middleware(
 )
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
-app.include_router(auth.router,      prefix="/api/auth",      tags=["Auth"])
-app.include_router(trains.router,    prefix="/api/trains",    tags=["Trains"])
-app.include_router(conflicts.router, prefix="/api/conflicts", tags=["Conflicts"])
-app.include_router(simulate.router,  prefix="/api/simulate",  tags=["Simulator"])
+app.include_router(auth.router,       prefix="/api/auth",       tags=["Auth"])
+app.include_router(trains.router,     prefix="/api/trains",     tags=["Trains"])
+app.include_router(conflicts.router,  prefix="/api/conflicts",  tags=["Conflicts"])
+app.include_router(simulate.router,   prefix="/api/simulate",   tags=["Simulator"])
+app.include_router(analytics.router,  prefix="/api/analytics",  tags=["Analytics"])
 
 # WebSocket hub (handles /ws/telemetry)
 app.include_router(websocket_router)
