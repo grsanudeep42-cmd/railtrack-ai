@@ -111,22 +111,7 @@ export const MOCK_DECISIONS: Decision[] = [
 ];
 
 // ── KPI ───────────────────────────────────────
-export const MOCK_KPI: KPIData = {
-  avgDelay: 7.4,
-  punctuality: 84.2,
-  throughput: 127,
-  conflictRate: 3.1,
-  overrideRate: 18.7,
-  aiAcceptance: 81.3,
-  deltas: {
-    avgDelay: -1.2,
-    punctuality: 2.8,
-    throughput: 11,
-    conflictRate: -0.7,
-    overrideRate: -3.2,
-    aiAcceptance: 4.6,
-  },
-};
+// KPIs are fetched dynamically from /api/analytics/kpis
 
 // ── Sparkline series ──────────────────────────
 export const SPARKLINE_DELAY = [8.1, 9.2, 7.8, 8.5, 7.2, 6.9, 7.4];
@@ -136,49 +121,8 @@ export const SPARKLINE_CONFLICTS = [4.2, 3.9, 3.7, 3.5, 3.3, 3.2, 3.1];
 export const SPARKLINE_OVERRIDE = [22.1, 21.4, 20.8, 20.1, 19.4, 19.0, 18.7];
 export const SPARKLINE_AI = [74.1, 75.8, 77.2, 78.5, 79.3, 80.1, 81.3];
 
-// ── Delay chart (7 days) ──────────────────────
-export const DELAY_CHART = [
-  { time: 'Mon', express: 5.2, freight: 9.8, local: 7.1 },
-  { time: 'Tue', express: 6.4, freight: 11.2, local: 8.3 },
-  { time: 'Wed', express: 4.8, freight: 8.7, local: 6.9 },
-  { time: 'Thu', express: 7.1, freight: 10.4, local: 9.2 },
-  { time: 'Fri', express: 5.9, freight: 9.1, local: 7.8 },
-  { time: 'Sat', express: 5.1, freight: 7.8, local: 6.4 },
-  { time: 'Sun', express: 4.3, freight: 8.2, local: 5.9 },
-];
-
-// ── Throughput stacked bar ────────────────────
-export const THROUGHPUT_CHART = [
-  { time: 'Mon', express: 38, freight: 42, local: 31 },
-  { time: 'Tue', express: 41, freight: 39, local: 33 },
-  { time: 'Wed', express: 45, freight: 44, local: 35 },
-  { time: 'Thu', express: 39, freight: 41, local: 32 },
-  { time: 'Fri', express: 47, freight: 46, local: 38 },
-  { time: 'Sat', express: 42, freight: 40, local: 30 },
-  { time: 'Sun', express: 36, freight: 38, local: 28 },
-];
-
 // ── Heatmap (hour × day) ──────────────────────
-// Uses a seeded LCG instead of Math.random() so SSR and client render
-// produce identical values and avoid Next.js hydration mismatches.
-function seededRandom(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 1664525 + 1013904223) & 0xffffffff;
-    return (s >>> 0) / 0xffffffff;
-  };
-}
-
-export const CONFLICT_HEATMAP: { day: string; hour: number; value: number }[] = [];
-const _heatmapRng = seededRandom(42);
-const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-for (const day of days) {
-  for (let hour = 0; hour < 24; hour++) {
-    const peak = (hour >= 7 && hour <= 10) || (hour >= 17 && hour <= 20);
-    const base = peak ? _heatmapRng() * 6 + 2 : _heatmapRng() * 2;
-    CONFLICT_HEATMAP.push({ day, hour, value: parseFloat(base.toFixed(1)) });
-  }
-}
+// Heatmap data is fetched dynamically from /api/analytics/heatmap
 
 // ── AI acceptance rate over time ──────────────
 export const AI_ACCEPTANCE_CHART = [
@@ -208,13 +152,7 @@ export const MOCK_INCIDENTS = [
 ];
 
 // ── Admin Users ───────────────────────────────
-export const MOCK_USERS = [
-  { id: 'U-001', name: 'Rajesh Sharma', email: 'r.sharma@railways.gov.in', role: 'CONTROLLER', status: 'ONLINE', lastLogin: '14 Mar 13:45', section: 'NR-42' },
-  { id: 'U-002', name: 'Priya Mehta', email: 'p.mehta@railways.gov.in', role: 'SUPERVISOR', status: 'ONLINE', lastLogin: '14 Mar 12:10', section: 'All Zones' },
-  { id: 'U-003', name: 'Arun Kumar', email: 'a.kumar@railways.gov.in', role: 'LOGISTICS', status: 'OFFLINE', lastLogin: '13 Mar 22:30', section: 'WR-15' },
-  { id: 'U-004', name: 'Sunita Rao', email: 's.rao@railways.gov.in', role: 'CONTROLLER', status: 'ONLINE', lastLogin: '14 Mar 14:02', section: 'SR-07' },
-  { id: 'U-005', name: 'Vikram Singh', email: 'v.singh@railways.gov.in', role: 'ADMIN', status: 'ONLINE', lastLogin: '14 Mar 08:00', section: 'HQ' },
-];
+// Users are fetched dynamically from /api/auth/users
 
 // ── System Health ─────────────────────────────
 export const SYSTEM_HEALTH = [
