@@ -40,6 +40,67 @@ export default function ControllerDashboard() {
   const [showAI, setShowAI] = useState(false);
   const [activeConflict, setActiveConflict] = useState<Conflict | null>(null);
   const [decisions, setDecisions] = useState<any[]>([]);
+  // State for tracking live data from RapidAPI
+  const [liveTrainData, setLiveTrainData] = useState<Record<string, {
+    delay: number;
+    currentStation: string;
+    currentStationName: string;
+    expectedArrival: string;
+    expectedArrivalNdls?: string;
+    nextStation: string;
+    lastUpdated: string;
+    terminated: boolean;
+    isLive: boolean;
+    loading: boolean;
+  }>>({});
+
+  const fetchLiveTrainData = async (e: React.MouseEvent, trainId: string) => {
+    e.stopPropagation();
+    try {
+      setLiveTrainData(prev => ({ ...prev, [trainId]: { ...prev[trainId], loading: true } }));
+      const token = getClientToken();
+      if (!token) throw new Error('No token');
+      // For demo, the mock train format (e.g. TN-1199) might only need the number part or might be directly matched.
+      // We'll pass the whole ID. The real rapid API uses digits, we will assume trainId matches or backend handles it.
+      const digitsOnly = trainId.replace(/\D/g, '');
+      const num = digitsOnly.length > 0 ? digitsOnly : trainId;
+      
+      const res = await fetch(`http://localhost:8000/api/trains/live/${num}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch live data');
+      const data = await res.json();
+      
+      // Also silently fetch name/origin/destination to update DB and local state
+      try {
+        await fetch(`http://localhost:8000/api/trains/info/${num}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (e) {
+        console.warn('Silent info fetch failed', e);
+      }
+
+      setLiveTrainData(prev => ({
+        ...prev,
+        [trainId]: {
+          delay: data.delay_minutes,
+          currentStation: data.current_station,
+          currentStationName: data.current_station_name,
+          expectedArrival: data.expected_arrival_ndls || 'Unknown', // Using NDLS as primary ETA if available, or just general fallback
+          expectedArrivalNdls: data.expected_arrival_ndls,
+          nextStation: data.next_station,
+          lastUpdated: data.last_updated,
+          terminated: data.terminated,
+          isLive: true,
+          loading: false
+        }
+      }));
+    } catch (err) {
+      console.error('Error fetching live train data:', err);
+      // Revert loading on error
+      setLiveTrainData(prev => ({ ...prev, [trainId]: { ...prev[trainId], loading: false } }));
+    }
+  };
 
   const { data: trains = [], error: trainsErr } = useQuery({
     queryKey: ['trains'],
@@ -319,17 +380,53 @@ export default function ControllerDashboard() {
                       {train.id}
                     </span>
                     <span className={
-                      train.status === 'CONFLICT' ? 'badge-conflict' :
-                      train.status === 'DELAYED'  ? 'badge-warn' :
-                      train.status === 'ON_TIME'  ? 'badge-safe' : 'badge-rail'
+                      liveTrainData[train.id]?.isLive 
+                        ? (liveTrainData[train.id].delay === 0 ? 'badge-safe' : liveTrainData[train.id].delay <= 30 ? 'badge-warn' : 'badge-conflict')
+                        : train.status === 'CONFLICT' ? 'badge-conflict' :
+                          train.status === 'DELAYED'  ? 'badge-warn' :
+                          train.status === 'ON_TIME'  ? 'badge-safe' : 'badge-rail'
                     } style={{ fontSize: '9px' }}>
-                      {train.status === 'ON_TIME' ? '●' : train.status === 'DELAYED' ? `+${train.delay}m` : train.status}
+                      {liveTrainData[train.id]?.isLive 
+                        ? (liveTrainData[train.id].delay === 0 ? '● ON TIME' : `+${liveTrainData[train.id].delay}m`)
+                        : (train.status === 'ON_TIME' ? '●' : train.status === 'DELAYED' ? `+${train.delay}m` : train.status)
+                      }
                     </span>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{train.origin} → {train.destination}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    ETA <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--text-secondary)' }}>{train.eta}</span>
-                    &nbsp;· {Math.round(train.speed)} km/h
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{train.origin} → {train.destination}</div>
+                    <button 
+                      onClick={(e) => fetchLiveTrainData(e, train.id)}
+                      disabled={liveTrainData[train.id]?.loading}
+                      style={{ 
+                        fontSize: '9px', padding: '2px 6px', borderRadius: '4px',
+                        background: liveTrainData[train.id]?.isLive ? 'var(--accent-safe)' : 'var(--bg-elevated)',
+                        color: liveTrainData[train.id]?.isLive ? '#0A0C10' : 'var(--text-secondary)',
+                        border: '1px solid var(--bg-border)',
+                        cursor: liveTrainData[train.id]?.loading ? 'wait' : 'pointer'
+                      }}
+                    >
+                      {liveTrainData[train.id]?.loading ? '...' : (liveTrainData[train.id]?.isLive ? 'LIVE' : 'Fetch')}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                      ETA <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--text-secondary)' }}>
+                        {liveTrainData[train.id]?.isLive && liveTrainData[train.id].expectedArrivalNdls ? liveTrainData[train.id].expectedArrivalNdls : train.eta}
+                      </span>
+                      &nbsp;· {Math.round(train.speed)} km/h
+                    </span>
+                    {liveTrainData[train.id]?.isLive && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ 
+                          animation: 'pulse-live 1.5s ease-in-out infinite', 
+                          display: 'inline-block', width: '6px', height: '6px', 
+                          borderRadius: '50%', background: 'var(--accent-safe)' 
+                        }} />
+                        <span style={{ color: 'var(--accent-safe)', fontFamily: 'var(--font-space-mono)', fontSize: '9px', fontWeight: 700 }}>
+                          LIVE
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -429,13 +526,48 @@ export default function ControllerDashboard() {
                 </div>
                 <div>
                   <div className="panel-header" style={{ marginBottom: '4px' }}>ETA</div>
-                  <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--text-primary)' }}>{hoveredTrain.eta}</div>
+                  <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--text-primary)' }}>
+                    {liveTrainData[hoveredTrain.id]?.isLive && liveTrainData[hoveredTrain.id]?.expectedArrivalNdls ? liveTrainData[hoveredTrain.id].expectedArrivalNdls : hoveredTrain.eta}
+                  </div>
                 </div>
-                {hoveredTrain.delay > 0 && (
+                {(hoveredTrain.delay > 0 || liveTrainData[hoveredTrain.id]?.isLive) && (
                   <div>
                     <div className="panel-header" style={{ marginBottom: '4px' }}>Delay</div>
-                    <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--accent-warn)' }}>+{hoveredTrain.delay} min</div>
+                    {liveTrainData[hoveredTrain.id]?.isLive ? (
+                      <div style={{ 
+                        fontFamily: 'var(--font-jetbrains)', fontSize: '14px', 
+                        color: liveTrainData[hoveredTrain.id].delay === 0 ? 'var(--accent-safe)' : liveTrainData[hoveredTrain.id].delay <= 30 ? 'var(--accent-warn)' : 'var(--accent-danger)' 
+                      }}>
+                        {liveTrainData[hoveredTrain.id].delay === 0 ? 'On Time' : `+${liveTrainData[hoveredTrain.id].delay} min`}
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--accent-warn)' }}>
+                        +{hoveredTrain.delay} min
+                      </div>
+                    )}
                   </div>
+                )}
+                {liveTrainData[hoveredTrain.id]?.isLive && (
+                  <>
+                    <div>
+                      <div className="panel-header" style={{ marginBottom: '4px' }}>Current Station</div>
+                      <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--accent-primary)' }}>
+                        {liveTrainData[hoveredTrain.id].currentStationName} ({liveTrainData[hoveredTrain.id].currentStation})
+                      </div>
+                    </div>
+                    <div>
+                      <div className="panel-header" style={{ marginBottom: '4px' }}>Next Station</div>
+                      <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                        {liveTrainData[hoveredTrain.id].nextStation}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="panel-header" style={{ marginBottom: '4px' }}>Last Updated</div>
+                      <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {liveTrainData[hoveredTrain.id].lastUpdated}
+                      </div>
+                    </div>
+                  </>
                 )}
                 {hoveredTrain.platform && (
                   <div>
