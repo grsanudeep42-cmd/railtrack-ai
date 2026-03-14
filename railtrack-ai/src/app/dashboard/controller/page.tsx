@@ -393,19 +393,26 @@ export default function ControllerDashboard() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{train.origin} → {train.destination}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {liveTrainData[train.id]?.isLive 
+                        ? <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Currently: {liveTrainData[train.id].currentStationName}</span>
+                        : `${train.origin} → ${train.destination}`
+                      }
+                    </div>
                     <button 
                       onClick={(e) => fetchLiveTrainData(e, train.id)}
                       disabled={liveTrainData[train.id]?.loading}
                       style={{ 
                         fontSize: '9px', padding: '2px 6px', borderRadius: '4px',
-                        background: liveTrainData[train.id]?.isLive ? 'var(--accent-safe)' : 'var(--bg-elevated)',
-                        color: liveTrainData[train.id]?.isLive ? '#0A0C10' : 'var(--text-secondary)',
-                        border: '1px solid var(--bg-border)',
-                        cursor: liveTrainData[train.id]?.loading ? 'wait' : 'pointer'
+                        background: liveTrainData[train.id]?.isLive ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-elevated)',
+                        color: liveTrainData[train.id]?.isLive ? 'var(--accent-safe)' : 'var(--text-secondary)',
+                        border: liveTrainData[train.id]?.isLive ? '1px solid var(--accent-safe)' : '1px solid var(--bg-border)',
+                        cursor: liveTrainData[train.id]?.loading ? 'wait' : 'pointer',
+                        fontFamily: 'var(--font-space-mono)',
+                        fontWeight: 600
                       }}
                     >
-                      {liveTrainData[train.id]?.loading ? '...' : (liveTrainData[train.id]?.isLive ? 'LIVE' : 'Fetch')}
+                      {liveTrainData[train.id]?.loading ? '...' : (liveTrainData[train.id]?.isLive ? 'REFRESH' : 'Fetch')}
                     </button>
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
