@@ -127,10 +127,14 @@ async def run_simulation(
     # The solver returns actual delay minutes for each train
     optimized_delay = sum(s.get("delay_minutes", 0) for s in schedule)
     delay_delta = optimized_delay - baseline_delay
-    conflicts_avoided = max(0, len(trains_db) - 1)
     
-    # Optional logic for demonstration - throughput metric based on active trains
-    throughput_change = round(-len([t for t in solver_trains if t["delay"] > 10]) * 0.8, 1)
+    # 1. Real conflicts avoided = number of interventions by the solver
+    conflicts_avoided = sum(1 for s in schedule if s.get("action") in ["HOLD", "REROUTE"])
+    
+    # 2. Real throughput/punctuality = % of trains that are NOT delayed after optimization
+    baseline = len(trains_db)
+    delayed_count = sum(1 for s in schedule if s.get("delay_minutes", 0) > 0)
+    throughput_change = round(((baseline - delayed_count) / baseline) * 100, 1) if baseline > 0 else 0.0
 
     actions = []
     for sched in schedule:
