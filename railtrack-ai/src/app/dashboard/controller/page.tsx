@@ -42,14 +42,16 @@ export default function ControllerDashboard() {
   const [decisions, setDecisions] = useState<any[]>([]);
   // State for tracking live data from RapidAPI
   const [liveTrainData, setLiveTrainData] = useState<Record<string, {
-    delay: number;
-    currentStation: string;
-    currentStationName: string;
-    expectedArrival: string;
+    status: 'ok' | 'not_running' | 'loading';
+    message?: string;
+    delay?: number;
+    currentStation?: string;
+    currentStationName?: string;
+    expectedArrival?: string;
     expectedArrivalNdls?: string;
-    nextStation: string;
-    lastUpdated: string;
-    terminated: boolean;
+    nextStation?: string;
+    lastUpdated?: string;
+    terminated?: boolean;
     isLive: boolean;
     loading: boolean;
   }>>({});
@@ -57,11 +59,9 @@ export default function ControllerDashboard() {
   const fetchLiveTrainData = async (e: React.MouseEvent, trainId: string) => {
     e.stopPropagation();
     try {
-      setLiveTrainData(prev => ({ ...prev, [trainId]: { ...prev[trainId], loading: true } }));
+      setLiveTrainData(prev => ({ ...prev, [trainId]: { ...prev[trainId], status: 'loading', loading: true, isLive: false } }));
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      // For demo, the mock train format (e.g. TN-1199) might only need the number part or might be directly matched.
-      // We'll pass the whole ID. The real rapid API uses digits, we will assume trainId matches or backend handles it.
       const digitsOnly = trainId.replace(/\D/g, '');
       const num = digitsOnly.length > 0 ? digitsOnly : trainId;
       
@@ -71,6 +71,20 @@ export default function ControllerDashboard() {
       if (!res.ok) throw new Error('Failed to fetch live data');
       const data = await res.json();
       
+      // Handle gracefully if the train is not running today
+      if (data.status === 'not_running') {
+        setLiveTrainData(prev => ({
+          ...prev,
+          [trainId]: {
+            status: 'not_running',
+            message: data.message || 'Train not running today or data unavailable',
+            isLive: false,
+            loading: false
+          }
+        }));
+        return;
+      }
+
       // Also silently fetch name/origin/destination to update DB and local state
       try {
         await fetch(`http://localhost:8000/api/trains/info/${num}`, {
@@ -83,10 +97,11 @@ export default function ControllerDashboard() {
       setLiveTrainData(prev => ({
         ...prev,
         [trainId]: {
+          status: 'ok',
           delay: data.delay_minutes,
           currentStation: data.current_station,
           currentStationName: data.current_station_name,
-          expectedArrival: data.expected_arrival_ndls || 'Unknown', // Using NDLS as primary ETA if available, or just general fallback
+          expectedArrival: data.expected_arrival_ndls || 'Unknown',
           expectedArrivalNdls: data.expected_arrival_ndls,
           nextStation: data.next_station,
           lastUpdated: data.last_updated,
@@ -97,8 +112,16 @@ export default function ControllerDashboard() {
       }));
     } catch (err) {
       console.error('Error fetching live train data:', err);
-      // Revert loading on error
-      setLiveTrainData(prev => ({ ...prev, [trainId]: { ...prev[trainId], loading: false } }));
+      setLiveTrainData(prev => ({ 
+        ...prev, 
+        [trainId]: { 
+          ...prev[trainId], 
+          status: 'not_running',
+          message: 'Could not reach live data service',
+          loading: false, 
+          isLive: false 
+        } 
+      }));
     }
   };
 
@@ -362,6 +385,12 @@ export default function ControllerDashboard() {
               <span className="panel-header">Train Queue</span>
               <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '12px', color: 'var(--accent-primary)' }}>{trains.length}</span>
             </div>
+            {/* Informational note about live data */}
+            <div style={{ padding: '6px 16px', background: 'rgba(0,212,255,0.04)', borderBottom: '1px solid var(--bg-border)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)' }}>
+                ℹ Live data available for trains currently running
+              </span>
+            </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {trains.map(train => (
                 <div
@@ -380,15 +409,24 @@ export default function ControllerDashboard() {
                       {train.id}
                     </span>
                     <span className={
-                      liveTrainData[train.id]?.isLive 
-                        ? (liveTrainData[train.id].delay === 0 ? 'badge-safe' : liveTrainData[train.id].delay <= 30 ? 'badge-warn' : 'badge-conflict')
-                        : train.status === 'CONFLICT' ? 'badge-conflict' :
-                          train.status === 'DELAYED'  ? 'badge-warn' :
-                          train.status === 'ON_TIME'  ? 'badge-safe' : 'badge-rail'
-                    } style={{ fontSize: '9px' }}>
-                      {liveTrainData[train.id]?.isLive 
-                        ? (liveTrainData[train.id].delay === 0 ? '● ON TIME' : `+${liveTrainData[train.id].delay}m`)
-                        : (train.status === 'ON_TIME' ? '●' : train.status === 'DELAYED' ? `+${train.delay}m` : train.status)
+                      liveTrainData[train.id]?.status === 'not_running' ? 'badge-rail'
+                        : liveTrainData[train.id]?.isLive 
+                          ? (liveTrainData[train.id].delay === 0 ? 'badge-safe' : (liveTrainData[train.id].delay ?? 0) <= 30 ? 'badge-warn' : 'badge-conflict')
+                          : train.status === 'CONFLICT' ? 'badge-conflict' :
+                            train.status === 'DELAYED'  ? 'badge-warn' :
+                            train.status === 'ON_TIME'  ? 'badge-safe' : 'badge-rail'
+                    } style={{ 
+                      fontSize: '9px',
+                      opacity: liveTrainData[train.id]?.status === 'not_running' ? 0.6 : 1
+                    }}
+                    title={liveTrainData[train.id]?.status === 'not_running' 
+                      ? (liveTrainData[train.id].message || 'Train not running today or data unavailable') 
+                      : undefined
+                    }>
+                      {liveTrainData[train.id]?.status === 'not_running' ? 'NO DATA'
+                        : liveTrainData[train.id]?.isLive 
+                          ? (liveTrainData[train.id].delay === 0 ? '● ON TIME' : `+${liveTrainData[train.id].delay}m`)
+                          : (train.status === 'ON_TIME' ? '●' : train.status === 'DELAYED' ? `+${train.delay}m` : train.status)
                       }
                     </span>
                   </div>
@@ -396,23 +434,41 @@ export default function ControllerDashboard() {
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                       {liveTrainData[train.id]?.isLive 
                         ? <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Currently: {liveTrainData[train.id].currentStationName}</span>
-                        : `${train.origin} → ${train.destination}`
+                        : liveTrainData[train.id]?.status === 'not_running'
+                          ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{train.origin} → {train.destination}</span>
+                          : `${train.origin} → ${train.destination}`
                       }
                     </div>
                     <button 
                       onClick={(e) => fetchLiveTrainData(e, train.id)}
                       disabled={liveTrainData[train.id]?.loading}
+                      title={liveTrainData[train.id]?.status === 'not_running' 
+                        ? 'Train not running today or data unavailable' 
+                        : undefined}
                       style={{ 
                         fontSize: '9px', padding: '2px 6px', borderRadius: '4px',
-                        background: liveTrainData[train.id]?.isLive ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-elevated)',
-                        color: liveTrainData[train.id]?.isLive ? 'var(--accent-safe)' : 'var(--text-secondary)',
-                        border: liveTrainData[train.id]?.isLive ? '1px solid var(--accent-safe)' : '1px solid var(--bg-border)',
+                        background: liveTrainData[train.id]?.isLive 
+                          ? 'rgba(34, 197, 94, 0.15)' 
+                          : liveTrainData[train.id]?.status === 'not_running'
+                            ? 'rgba(148, 163, 184, 0.08)'
+                            : 'var(--bg-elevated)',
+                        color: liveTrainData[train.id]?.isLive 
+                          ? 'var(--accent-safe)' 
+                          : liveTrainData[train.id]?.status === 'not_running'
+                            ? 'var(--text-muted)'
+                            : 'var(--text-secondary)',
+                        border: liveTrainData[train.id]?.isLive 
+                          ? '1px solid var(--accent-safe)' 
+                          : '1px solid var(--bg-border)',
                         cursor: liveTrainData[train.id]?.loading ? 'wait' : 'pointer',
                         fontFamily: 'var(--font-space-mono)',
                         fontWeight: 600
                       }}
                     >
-                      {liveTrainData[train.id]?.loading ? '...' : (liveTrainData[train.id]?.isLive ? 'REFRESH' : 'Fetch')}
+                      {liveTrainData[train.id]?.loading ? '...' 
+                        : liveTrainData[train.id]?.isLive ? 'REFRESH' 
+                        : liveTrainData[train.id]?.status === 'not_running' ? 'RETRY'
+                        : 'Fetch'}
                     </button>
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

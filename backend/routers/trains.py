@@ -65,12 +65,14 @@ class StatusUpdateRequest(BaseModel):
 
 class LiveTrainResponse(BaseModel):
     train_number: str
-    current_station: str
-    current_station_name: str
-    delay_minutes: int
-    terminated: bool
-    last_updated: str
-    next_station: str
+    status: str = "ok"  # "ok" | "not_running"
+    message: Optional[str] = None
+    current_station: Optional[str] = None
+    current_station_name: Optional[str] = None
+    delay_minutes: Optional[int] = None
+    terminated: Optional[bool] = None
+    last_updated: Optional[str] = None
+    next_station: Optional[str] = None
     expected_arrival_ndls: Optional[str] = None
 
 
@@ -133,10 +135,33 @@ async def get_live_train_status(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10.0)
-            response.raise_for_status()
+            
+            # Gracefully handle 400 (train not currently running today)
+            if response.status_code == 400:
+                return LiveTrainResponse(
+                    train_number=train_number,
+                    status="not_running",
+                    message="Train not currently running or data unavailable today"
+                )
+            
+            # For any other non-2xx, also return gracefully rather than crashing
+            if response.status_code != 200:
+                return LiveTrainResponse(
+                    train_number=train_number,
+                    status="not_running",
+                    message=f"API unavailable (HTTP {response.status_code})"
+                )
+
             data = response.json()
             
+            # Check if the API itself signals no data in body
             body = data.get("body", {})
+            if not body or data.get("status") == False:
+                return LiveTrainResponse(
+                    train_number=train_number,
+                    status="not_running",
+                    message="Train not currently running or data unavailable today"
+                )
             
             terminated = body.get("terminated", False)
             last_updated = str(body.get("server_timestamp", "Unknown"))
@@ -166,7 +191,6 @@ async def get_live_train_status(
                         actual = st.get("actual_arrival_time")
                         sched = st.get("scheduled_arrival_time", st.get("arrival_time"))
                         if actual and sched:
-                            # Parse expected HH:MM strings to calculate differences
                             try:
                                 h_a, m_a = map(int, actual.split(":"))
                                 h_s, m_s = map(int, sched.split(":"))
@@ -182,6 +206,7 @@ async def get_live_train_status(
             
             return LiveTrainResponse(
                 train_number=train_number,
+                status="ok",
                 current_station=current_station_code,
                 current_station_name=current_station_name,
                 delay_minutes=delay_minutes,
@@ -191,10 +216,18 @@ async def get_live_train_status(
                 expected_arrival_ndls=expected_arrival_ndls
             )
             
+    except httpx.TimeoutException:
+        return LiveTrainResponse(
+            train_number=train_number,
+            status="not_running",
+            message="API request timed out — try again"
+        )
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code, 
-            detail=f"Error fetching live status: {exc.response.text}"
+        # Catch status errors not handled above
+        return LiveTrainResponse(
+            train_number=train_number,
+            status="not_running",
+            message="Train not currently running or data unavailable today"
         )
     except Exception as e:
         raise HTTPException(
