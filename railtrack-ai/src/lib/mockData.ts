@@ -159,12 +159,23 @@ export const THROUGHPUT_CHART = [
 ];
 
 // ── Heatmap (hour × day) ──────────────────────
+// Uses a seeded LCG instead of Math.random() so SSR and client render
+// produce identical values and avoid Next.js hydration mismatches.
+function seededRandom(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
 export const CONFLICT_HEATMAP: { day: string; hour: number; value: number }[] = [];
+const _heatmapRng = seededRandom(42);
 const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 for (const day of days) {
   for (let hour = 0; hour < 24; hour++) {
     const peak = (hour >= 7 && hour <= 10) || (hour >= 17 && hour <= 20);
-    const base = peak ? Math.random() * 6 + 2 : Math.random() * 2;
+    const base = peak ? _heatmapRng() * 6 + 2 : _heatmapRng() * 2;
     CONFLICT_HEATMAP.push({ day, hour, value: parseFloat(base.toFixed(1)) });
   }
 }
