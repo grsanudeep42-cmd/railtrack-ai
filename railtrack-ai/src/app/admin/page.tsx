@@ -1,8 +1,9 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth';
-import { MOCK_USERS, SYSTEM_HEALTH } from '@/lib/mockData';
+import { useAuth, getClientToken } from '@/lib/auth';
+import { SYSTEM_HEALTH } from '@/lib/mockData';
+import { useQuery } from '@tanstack/react-query';
 import { Settings, Users, Key, Activity, Database, Shield, HardDrive, Cpu, Network } from 'lucide-react';
 
 const TABS = [
@@ -15,6 +16,20 @@ const TABS = [
 export default function AdminPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
+
+  const { data: usersData = [], isLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) throw new Error('No token');
+      const res = await fetch('http://localhost:8000/api/auth/users/', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401 || res.status === 403) window.location.href = '/login';
+      return res.json() as Promise<any[]>;
+    },
+    enabled: !!user && user.role === 'ADMIN'
+  });
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
@@ -96,12 +111,14 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {MOCK_USERS.map(u => (
+                      {isLoading ? (
+                        <tr><td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Loading users...</td></tr>
+                      ) : usersData.map(u => (
                         <tr key={u.id}>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', border: '1px solid var(--bg-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontFamily: 'var(--font-space-mono)', color: 'var(--text-muted)' }}>
-                                {u.name.split(' ').map(n=>n[0]).join('')}
+                                {u.name ? u.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
                               </div>
                               <div>
                                 <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{u.name}</div>
@@ -116,12 +133,14 @@ export default function AdminPage() {
                           </td>
                           <td><span style={{ fontFamily: 'var(--font-jetbrains)' }}>{u.section}</span></td>
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontFamily: 'var(--font-space-mono)', color: u.status === 'ONLINE' ? 'var(--accent-safe)' : 'var(--text-muted)' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.status === 'ONLINE' ? 'var(--accent-safe)' : 'var(--text-muted)' }} />
-                              {u.status}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontFamily: 'var(--font-space-mono)', color: u.is_active ? 'var(--accent-safe)' : 'var(--text-muted)' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.is_active ? 'var(--accent-safe)' : 'var(--text-muted)' }} />
+                              {u.is_active ? 'ACTIVE' : 'INACTIVE'}
                             </div>
                           </td>
-                          <td style={{ fontFamily: 'var(--font-jetbrains)' }}>{u.lastLogin}</td>
+                          <td style={{ fontFamily: 'var(--font-jetbrains)' }}>
+                            {new Date(u.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </td>
                           <td>
                             <button className="btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }}>Edit</button>
                           </td>

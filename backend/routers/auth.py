@@ -9,8 +9,8 @@ routers/auth.py — Real JWT authentication endpoints for RailTrack AI.
 import os
 import uuid
 import httpx
-from datetime import timedelta
-from typing import Optional
+from datetime import timedelta, datetime
+from typing import Optional, List
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -56,6 +56,19 @@ class UserResponse(BaseModel):
     role: str
     section: str
     is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class UserListResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+    section: str
+    is_active: bool
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -192,6 +205,29 @@ async def register(
         section=new_user.section,
         is_active=new_user.is_active,
     )
+
+
+@router.get("/users/", response_model=List[UserListResponse])
+async def get_all_users(
+    current_user: User = Depends(get_current_active_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: query all users from the User table."""
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+    
+    return [
+        UserListResponse(
+            id=u.id,
+            email=u.email,
+            name=u.name,
+            role=u.role.value,
+            section=u.section,
+            is_active=u.is_active,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
 
 
 @router.post("/google-verify", response_model=TokenResponse)
