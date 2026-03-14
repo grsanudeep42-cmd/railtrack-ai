@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from database import get_db
-from models import Train, Conflict, Decision, DecisionSourceEnum, TrainStatusEnum
-from auth_utils import get_current_user, User
+from models import Train, Conflict, Decision, DecisionSourceEnum, TrainStatusEnum, User
+from auth_utils import get_current_user
 
 router = APIRouter()
 
