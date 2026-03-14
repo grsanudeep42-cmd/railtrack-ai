@@ -17,6 +17,29 @@ RailTrack AI assists controllers in making real-time, AI-optimized decisions for
 
 ---
 
+## Screenshots
+
+![Controller Dashboard](docs/screenshots/controller-dashboard.png)
+![OR-Tools Simulator](docs/screenshots/simulator-results.png)  
+![Login Page](docs/screenshots/login.png)
+![Analytics](docs/screenshots/analytics.png)
+
+## 🏗️ Architecture
+
+Browser → Next.js 14 (TypeScript)
+              ↓ REST + WebSocket
+         FastAPI (Python 3.11)
+              ↓              ↓
+        PostgreSQL      OR-Tools CP-SAT
+        (trains,        (constraint solver,
+         users,          conflict resolution,
+         conflicts)      precedence optimizer)
+              ↓
+         Redis + WebSocket Hub
+         (real-time telemetry)
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
