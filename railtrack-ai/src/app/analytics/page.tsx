@@ -142,6 +142,20 @@ export default function AnalyticsPage() {
     }
   });
 
+  const { data: incidentsData = [], isLoading: incidentsLoading } = useQuery({
+    queryKey: ['analytics-incidents'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch('http://localhost:8000/api/analytics/incidents', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      return res.json() as Promise<any[]>;
+    },
+    refetchInterval: 30000,
+  });
+
   // Custom tooltips
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -394,15 +408,19 @@ export default function AnalyticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {MOCK_INCIDENTS.map(inc => (
+                {incidentsLoading ? (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Loading incidents...</td></tr>
+                ) : incidentsData.length === 0 ? (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>No recent incidents</td></tr>
+                ) : incidentsData.map(inc => (
                   <tr key={inc.id}>
                     <td style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--text-primary)' }}>{inc.id}</td>
                     <td style={{ fontFamily: 'var(--font-jetbrains)' }}>{inc.timestamp}</td>
                     <td>{inc.type}</td>
                     <td>{inc.location}</td>
-                    <td>{inc.trains.map(t => <span key={t} className="badge-rail" style={{ marginRight: '6px' }}>{t}</span>)}</td>
-                    <td><span className={`badge-${inc.severity === 'HIGH' ? 'conflict' : inc.severity === 'MEDIUM' ? 'warn' : 'safe'}`}>{inc.severity}</span></td>
-                    <td style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--accent-primary)' }}>{inc.resolvedIn}</td>
+                    <td>{inc.trains.map((t: string) => <span key={t} className="badge-rail" style={{ marginRight: '6px' }}>{t}</span>)}</td>
+                    <td><span className={`badge-${inc.severity === 'HIGH' || inc.severity === 'CRITICAL' ? 'conflict' : inc.severity === 'MEDIUM' ? 'warn' : 'safe'}`}>{inc.severity}</span></td>
+                    <td style={{ fontFamily: 'var(--font-jetbrains)', color: inc.resolvedIn === 'Pending' ? 'var(--accent-warn)' : 'var(--accent-primary)' }}>{inc.resolvedIn}</td>
                   </tr>
                 ))}
               </tbody>

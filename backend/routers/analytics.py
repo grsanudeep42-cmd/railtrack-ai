@@ -257,3 +257,33 @@ async def get_conflict_heatmap(
             })
             
     return chart_data
+
+
+@router.get("/incidents")
+async def get_recent_incidents(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns the latest 20 conflicts/incidents to populate the Analytics table.
+    """
+    query = (
+        select(Conflict)
+        .order_by(Conflict.detected_at.desc())
+        .limit(20)
+    )
+    result = await db.execute(query)
+    conflicts = result.scalars().all()
+    
+    return [
+        {
+            "id": c.id,
+            "timestamp": c.detected_at.strftime("%H:%M:%S") if c.detected_at else "",
+            "type": c.conflict_type.value if c.conflict_type else "UNKNOWN",
+            "location": c.location,
+            "trains": [c.train_a_id, c.train_b_id],
+            "severity": c.severity.value if c.severity else "MEDIUM",
+            "resolvedIn": f"{int((c.resolved_at - c.detected_at).total_seconds() // 60)} mins" if c.resolved and c.resolved_at and c.detected_at else "Pending"
+        }
+        for c in conflicts
+    ]
