@@ -6,7 +6,7 @@ import os
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, case
@@ -287,3 +287,53 @@ async def get_recent_incidents(
         }
         for c in conflicts
     ]
+
+
+@router.get("/ai-acceptance")
+async def get_ai_acceptance(
+    period: int = Query(14, description="Days to look back"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns the AI Acceptance rate for the past N days.
+    """
+    query = (
+        select(
+            func.date_trunc('day', Conflict.detected_at).label('day_date'),
+            func.count(Conflict.id.distinct()).label('total'),
+            func.count(Decision.id).filter(Decision.action == 'ACCEPT_AI').label('accepted')
+        )
+        .select_from(Conflict)
+        .outerjoin(Decision, Conflict.id == Decision.conflict_id)
+        .where(Conflict.detected_at >= datetime.utcnow() - timedelta(days=period))
+        .group_by(func.date_trunc('day', Conflict.detected_at))
+    )
+    result = await db.execute(query)
+    rows = result.all()
+    
+    lookup = {row.day_date.date(): row for row in rows if row.day_date}
+    chart_data = []
+    
+    for i in range(period - 1, -1, -1):
+        d_obj = (datetime.utcnow() - timedelta(days=i)).date()
+        date_str = d_obj.strftime("%d %b")
+        
+        if d_obj in lookup:
+            r = lookup[d_obj]
+            total = r.total or 0
+            accepted = r.accepted or 0
+            rate = round((accepted / total * 100), 1) if total > 0 else 0.0
+            chart_data.append({
+                "date": date_str,
+                "acceptance": rate,
+                "total": total
+            })
+        else:
+            chart_data.append({
+                "date": date_str,
+                "acceptance": 0.0,
+                "total": 0
+            })
+            
+    return chart_data

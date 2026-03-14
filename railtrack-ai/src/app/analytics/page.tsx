@@ -156,6 +156,19 @@ export default function AnalyticsPage() {
     refetchInterval: 30000,
   });
 
+  const { data: aiAcceptanceData = [], isLoading: aiAcceptanceLoading } = useQuery({
+    queryKey: ['analytics-ai-acceptance'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch('http://localhost:8000/api/analytics/ai-acceptance?period=14', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      return res.json() as Promise<{date: string, acceptance: number, total: number}[]>;
+    }
+  });
+
   // Custom tooltips
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -341,21 +354,25 @@ export default function AnalyticsPage() {
             {/* AI Acceptance Area */}
             <div className="panel" style={{ padding: '24px', height: '340px', display: 'flex', flexDirection: 'column' }}>
               <div className="panel-header" style={{ marginBottom: '24px' }}>AI Match Rate (2 Weeks)</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={AI_ACCEPTANCE_CHART}>
-                  <defs>
-                    <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                  <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} minTickGap={30} />
-                  <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} domain={[60, 100]} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="acceptance" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorAI)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              {aiAcceptanceLoading ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={aiAcceptanceData}>
+                    <defs>
+                      <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                    <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} minTickGap={30} />
+                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} domain={[60, 100]} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="acceptance" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorAI)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Custom Heatmap */}
