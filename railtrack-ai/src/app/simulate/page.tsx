@@ -17,6 +17,9 @@ export default function SimulatePage() {
   const [simState, setSimState] = useState<SimState>('IDLE');
   const [selectedTrains, setSelectedTrains] = useState<string[]>([]);
   const [objective, setObjective] = useState('DELAY');
+  const [disruptionType, setDisruptionType] = useState('HEAVY_WEATHER');
+  const [disruptionLocation, setDisruptionLocation] = useState('AGC');
+  const [disruptionDuration, setDisruptionDuration] = useState(120);
   const [simResults, setSimResults] = useState<any>(null);
 
   const { data: trains = [] } = useQuery({
@@ -64,9 +67,9 @@ export default function SimulatePage() {
     setSimState('RUNNING');
     const payload = {
       train_ids: selectedTrains,
-      disruption_type: 'HEAVY_WEATHER',
-      disruption_location: 'AGC',
-      disruption_duration_minutes: 120,
+      disruption_type: disruptionType,
+      disruption_location: disruptionLocation,
+      disruption_duration_minutes: disruptionDuration,
       objective: objective === 'DELAY' ? 'MINIMIZE_DELAY' : objective
     };
     console.log('Sending to solver:', JSON.stringify(payload));
@@ -131,11 +134,11 @@ export default function SimulatePage() {
             {/* Event Type */}
             <div>
               <label style={{ display: 'block', fontFamily: 'var(--font-space-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>DISRUPTION EVENT</label>
-              <select className="input" defaultValue="weather">
-                <option value="weather">Heavy Weather (Speed restrictions)</option>
-                <option value="breakdown">Engine Breakdown</option>
-                <option value="signal">Signal Failure</option>
-                <option value="maintenance">Emergency Track Maintenance</option>
+              <select className="input" value={disruptionType} onChange={e => setDisruptionType(e.target.value)}>
+                <option value="HEAVY_WEATHER">Heavy Weather (Speed restrictions)</option>
+                <option value="ENGINE_BREAKDOWN">Engine Breakdown</option>
+                <option value="SIGNAL_FAILURE">Signal Failure</option>
+                <option value="MAINTENANCE">Emergency Track Maintenance</option>
               </select>
             </div>
 
@@ -143,16 +146,16 @@ export default function SimulatePage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', fontFamily: 'var(--font-space-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>LOCATION</label>
-                <select className="input">
-                  <option>Agra Cantt (J1)</option>
-                  <option>Gwalior (J2)</option>
-                  <option>Track Seg NR-42</option>
+                <select className="input" value={disruptionLocation} onChange={e => setDisruptionLocation(e.target.value)}>
+                  <option value="AGC">Agra Cantt (J1)</option>
+                  <option value="GWL">Gwalior (J2)</option>
+                  <option value="NR-42">Track Seg NR-42</option>
                 </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontFamily: 'var(--font-space-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>DURATION</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="number" className="input" defaultValue={120} />
+                  <input type="number" className="input" value={disruptionDuration} onChange={e => setDisruptionDuration(Number(e.target.value))} />
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>min</span>
                 </div>
               </div>
@@ -232,8 +235,8 @@ export default function SimulatePage() {
                 <div className="panel" style={{ padding: '16px' }}>
                   <div className="panel-header" style={{ marginBottom: '8px' }}>Throughput (trains/hr)</div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' }}>14.2</span>
-                    <span className="badge-warn" style={{ marginBottom: '6px' }}>{simResults?.throughput_change} drop</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' }}>{simResults?.throughput_change}</span>
+                    <span className="badge-warn" style={{ marginBottom: '6px' }}>drop</span>
                   </div>
                 </div>
                 <div className="panel" style={{ padding: '16px' }}>
