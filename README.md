@@ -61,7 +61,7 @@ cp backend/.env.example backend/.env
 > If there's no `.env.example`, create `backend/.env` with:
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/railtrack
-SECRET_KEY=railtrack-super-secret-key-change-in-prod
+SECRET_KEY=your-secret-key-generate-with-secrets.token_hex(32)
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 GOOGLE_CLIENT_ID=your-google-client-id

@@ -5,9 +5,18 @@ Loads env variables, creates DB tables on startup, registers all routers.
 
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import os
+import logging
 
 # Load .env before anything imports os.getenv()
 load_dotenv(override=True)
+
+# Safety check for production deployments
+secret_key = os.getenv("SECRET_KEY", "")
+if "change" in secret_key.lower():
+    logging.warning("⚠️ CRITICAL SECURITY WARNING: SECRET_KEY contains the word 'change'. "
+                    "Do NOT use default/weak keys in production. "
+                    "Run `python -c \"import secrets; print(secrets.token_hex(32))\"` to generate a secure key.")
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
