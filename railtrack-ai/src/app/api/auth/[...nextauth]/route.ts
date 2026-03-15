@@ -4,7 +4,8 @@
  * Configures GoogleProvider + custom JWT-bridge to FastAPI backend.
  */
 
-import NextAuth, { NextAuthOptions } from 'next-auth';
+import NextAuth from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { cookies } from 'next/headers';
 
