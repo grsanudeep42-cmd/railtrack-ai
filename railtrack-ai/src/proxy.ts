@@ -1,5 +1,5 @@
-/**
- * src/middleware.ts — Next.js Edge middleware for RailTrack AI.
+﻿/**
+ * src/middleware.ts â€” Next.js Edge middleware for RailTrack AI.
  * Protects authenticated routes by checking for the railtrack_token cookie.
  * Redirects unauthenticated users to /login.
  */
@@ -17,7 +17,7 @@ const PROTECTED_PREFIXES = [
 // Routes that are always public
 const PUBLIC_PATHS = ['/login', '/api/auth'];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths through
@@ -46,7 +46,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Decode JWT payload (Edge runtime — no crypto needed for just reading claims)
+  // Decode JWT payload (Edge runtime â€” no crypto needed for just reading claims)
   try {
     const payloadBase64 = token.split('.')[1];
     if (!payloadBase64) throw new Error('Bad token');
@@ -72,7 +72,7 @@ export function middleware(req: NextRequest) {
     return res;
 
   } catch {
-    // Invalid token — redirect to login
+    // Invalid token â€” redirect to login
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = '/login';
     const res = NextResponse.redirect(loginUrl);
@@ -86,3 +86,4 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
+
