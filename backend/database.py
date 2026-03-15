@@ -1,5 +1,5 @@
-"""
-database.py — SQLAlchemy async engine + session factory for RailTrack AI.
+﻿"""
+database.py â€” SQLAlchemy async engine + session factory for RailTrack AI.
 Reads DATABASE_URL from environment (loaded via python-dotenv in main.py).
 """
 
@@ -9,7 +9,7 @@ from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
 
 # Load .env from the backend directory
-load_dotenv(override=True)
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/railtrack")
 
@@ -22,14 +22,14 @@ engine = create_async_engine(
     max_overflow=20,
 )
 
-# Session factory — used by get_db() dependency
+# Session factory â€” used by get_db() dependency
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     expire_on_commit=False,
     class_=AsyncSession,
 )
 
-# Declarative base — imported by models.py
+# Declarative base â€” imported by models.py
 Base = declarative_base()
 
 
@@ -50,8 +50,9 @@ async def create_all_tables():
     Called once at application startup to create all tables defined in models.py.
     In production, prefer Alembic migrations over this function.
     """
-    # Import here to avoid circular imports — models must register with Base first
+    # Import here to avoid circular imports â€” models must register with Base first
     from models import Base as ModelsBase  # noqa: F401 (side-effect: registers models)
     async with engine.begin() as conn:
         await conn.run_sync(ModelsBase.metadata.create_all)
-    print("[DB] All tables are ready ✓")
+    print("[DB] All tables are ready âœ“")
+

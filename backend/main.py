@@ -1,5 +1,5 @@
-"""
-main.py — FastAPI application entry point for RailTrack AI.
+﻿"""
+main.py â€” FastAPI application entry point for RailTrack AI.
 Loads env variables, creates DB tables on startup, registers all routers.
 """
 
@@ -9,12 +9,12 @@ import os
 import logging
 
 # Load .env before anything imports os.getenv()
-load_dotenv(override=True)
+load_dotenv()
 
 # Safety check for production deployments
 secret_key = os.getenv("SECRET_KEY", "")
 if "change" in secret_key.lower():
-    logging.warning("⚠️ CRITICAL SECURITY WARNING: SECRET_KEY contains the word 'change'. "
+    logging.warning("âš ï¸ CRITICAL SECURITY WARNING: SECRET_KEY contains the word 'change'. "
                     "Do NOT use default/weak keys in production. "
                     "Run `python -c \"import secrets; print(secrets.token_hex(32))\"` to generate a secure key.")
 
@@ -32,17 +32,17 @@ from ws.hub import router as websocket_router
 from auth_utils import verify_token
 
 
-# ─── Lifespan ─────────────────────────────────────────────────────────────────
+# â”€â”€â”€ Lifespan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create DB tables on startup (idempotent — does not drop/recreate)."""
+    """Create DB tables on startup (idempotent â€” does not drop/recreate)."""
     await create_all_tables()
     yield
     # Shutdown: nothing to teardown (connection pool closes automatically)
 
 
-# ─── App ──────────────────────────────────────────────────────────────────────
+# â”€â”€â”€ App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 app = FastAPI(
     title="RailTrack AI API",
@@ -51,7 +51,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ─── Rate limiting ────────────────────────────────────────────────────────────
+# â”€â”€â”€ Rate limiting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -72,7 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Routers ──────────────────────────────────────────────────────────────────
+# â”€â”€â”€ Routers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.include_router(auth.router,       prefix="/api/auth",       tags=["Auth"])
 app.include_router(trains.router,     prefix="/api/trains",     tags=["Trains"])
 app.include_router(conflicts.router,  prefix="/api/conflicts",  tags=["Conflicts"])
@@ -84,7 +84,7 @@ app.include_router(disruptions.router,prefix="/api/disruptions", tags=["Disrupti
 app.include_router(websocket_router)
 
 
-# ─── Health check (public) ────────────────────────────────────────────────────
+# â”€â”€â”€ Health check (public) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.get("/health", tags=["Health"])
 async def health_check():
@@ -96,3 +96,4 @@ async def health_check():
             "auth":     "JWT/bcrypt",
         },
     }
+
