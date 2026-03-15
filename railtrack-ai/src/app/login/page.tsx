@@ -1,6 +1,13 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth, UserRole } from '@/lib/auth';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+function setCookie(name: string, value: string, maxAgeSeconds = 86400) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax`;
+}
 
 const ROLES: { key: UserRole; icon: string; label: string; desc: string }[] = [
   { key: 'CONTROLLER',  icon: '🎛️', label: 'Section Controller',    desc: 'Live track map, conflict resolution' },
@@ -14,7 +21,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState('controller@demo.rail');
   const [password, setPassword] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
   const { login, isLoading, error } = useAuth();
+  const router = useRouter();
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
@@ -27,14 +36,74 @@ export default function LoginPage() {
     await login({ email, password, role: selectedRole });
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setGoogleLoading(true);
-    try {
-      const { signIn } = await import('next-auth/react');
-      await signIn('google', { callbackUrl: '/dashboard/controller' });
-    } catch {
+    setGoogleError(null);
+
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+    if (!clientId) {
+      setGoogleError('Google Sign-In is not configured (missing NEXT_PUBLIC_GOOGLE_CLIENT_ID).');
       setGoogleLoading(false);
+      return;
     }
+
+    // Dynamically load the Google Identity Services script
+    const loadGsi = () => new Promise<void>((resolve, reject) => {
+      if (typeof (window as any).google !== 'undefined') { resolve(); return; }
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+      document.head.appendChild(script);
+    });
+
+    loadGsi()
+      .then(() => {
+        (window as any).google.accounts.id.initialize({
+          client_id: clientId,
+          callback: async (response: { credential: string }) => {
+            try {
+              const res = await fetch(`${API_URL}/api/auth/google-verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: response.credential }),
+              });
+
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Google sign-in failed' }));
+                throw new Error(err.detail ?? 'Google sign-in failed');
+              }
+
+              const data = await res.json();
+              const { access_token, user: apiUser } = data;
+
+              // Same cookie logic as auth.tsx login()
+              setCookie('railtrack_token', access_token, 86400);
+              setCookie('rt_role', apiUser.role, 86400);
+
+              // Same role-based routing as auth.tsx login()
+              switch (apiUser.role as UserRole) {
+                case 'CONTROLLER': router.push('/dashboard/controller'); break;
+                case 'SUPERVISOR': router.push('/analytics');             break;
+                case 'LOGISTICS':  router.push('/simulate');              break;
+                case 'ADMIN':      router.push('/admin');                 break;
+                default:           router.push('/dashboard/controller');
+              }
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : 'Google sign-in failed';
+              setGoogleError(message);
+              setGoogleLoading(false);
+            }
+          },
+        });
+        (window as any).google.accounts.id.prompt();
+      })
+      .catch((err: Error) => {
+        setGoogleError(err.message);
+        setGoogleLoading(false);
+      });
   };
 
   return (
@@ -182,6 +251,22 @@ export default function LoginPage() {
             )}
             Sign in with Google
           </button>
+
+          {/* Google auth error */}
+          {googleError && (
+            <div style={{
+              marginTop: '10px',
+              padding: '10px 14px',
+              background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '6px',
+              fontFamily: 'var(--font-space-mono)',
+              fontSize: '12px',
+              color: '#f87171',
+            }}>
+              ⚠ {googleError}
+            </div>
+          )}
 
           {/* Demo hint */}
           <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '6px' }}>
