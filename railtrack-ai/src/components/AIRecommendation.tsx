@@ -1,5 +1,5 @@
 'use client';
-import { MOCK_CONFLICTS, Conflict } from '@/lib/mockData';
+import { Conflict } from '@/lib/mockData';
 import { useState, useEffect } from 'react';
 
 interface Props {

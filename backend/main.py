@@ -18,11 +18,13 @@ if "change" in secret_key.lower():
                     "Do NOT use default/weak keys in production. "
                     "Run `python -c \"import secrets; print(secrets.token_hex(32))\"` to generate a secure key.")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import create_all_tables
-from routers import auth, trains, conflicts, simulate, analytics, admin, admin
+from routers import auth, trains, conflicts, simulate, analytics, admin, ai, disruptions
 from ws.hub import router as websocket_router
 from auth_utils import verify_token
 
@@ -46,10 +48,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow Next.js dev server
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,9 +68,10 @@ app.include_router(auth.router,       prefix="/api/auth",       tags=["Auth"])
 app.include_router(trains.router,     prefix="/api/trains",     tags=["Trains"])
 app.include_router(conflicts.router,  prefix="/api/conflicts",  tags=["Conflicts"])
 app.include_router(simulate.router,   prefix="/api/simulate",   tags=["Simulator"])
-app.include_router(analytics.router,  prefix="/api/analytics",  tags=["Analytics"])
-
-# WebSocket hub (handles /ws/telemetry)
+app.include_router(analytics.router,  prefix="/api/analytics",   tags=["Analytics"])
+app.include_router(admin.router,      prefix="/api/admin",       tags=["Admin"])
+app.include_router(ai.router,         prefix="/api/ai",          tags=["AI"])
+app.include_router(disruptions.router,prefix="/api/disruptions", tags=["Disruptions"])
 app.include_router(websocket_router)
 
 

@@ -6,6 +6,7 @@
 
 import NextAuth, { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import { cookies } from 'next/headers';
 
 const FASTAPI_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -37,6 +38,16 @@ export const authOptions: NextAuthOptions = {
             token.role        = data.user?.role  ?? 'CONTROLLER';
             token.section     = data.user?.section ?? 'NR-42';
             token.railtrackId = data.user?.id;
+            
+            // Explicitly sync the FastAPI token into the custom cookies 
+            // so our middleware & client-side fetches can use it immediately.
+            try {
+              const cookieStore = await cookies();
+              cookieStore.set('railtrack_token', data.access_token, { path: '/', maxAge: 86400, sameSite: 'lax' });
+              cookieStore.set('rt_role', data.user?.role ?? 'CONTROLLER', { path: '/', maxAge: 86400, sameSite: 'lax', httpOnly: false });
+            } catch (err) {
+              console.error('[NextAuth] Could not set cookies automatically:', err);
+            }
           }
         } catch (err) {
           console.error('[NextAuth] google-verify failed:', err);

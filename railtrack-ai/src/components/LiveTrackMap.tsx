@@ -1,6 +1,15 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { TRACK_STATIONS, TRACK_SEGMENTS, TRACK_SIGNALS, DEMO_TRAIN_PATHS, TrainPriority } from '@/lib/mockData';
+import { useQuery } from '@tanstack/react-query';
+import { TRACK_STATIONS, TRACK_SEGMENTS, TRACK_SIGNALS, TrainPriority } from '@/lib/mockData';
+import { API_BASE } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+
+// Helper to grab token on the client
+function getClientToken() {
+  const match = typeof document !== 'undefined' ? document.cookie.match(/(?:^|;\s*)railtrack_token=([^;]*)/) : null;
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 const PRIORITY_COLORS: Record<TrainPriority, string> = {
   EXPRESS:     '#00D4FF',
@@ -15,6 +24,7 @@ interface TrainPosition {
   progress: number; // 0-1 along track
   segFrom: string;
   segTo: string;
+  speed: number;
 }
 
 const SVG_W = 920;
@@ -37,18 +47,52 @@ interface Props {
 }
 
 export default function LiveTrackMap({ conflictSegment, onTrainClick }: Props) {
-  const [trains, setTrains] = useState<TrainPosition[]>(DEMO_TRAIN_PATHS.map(t => ({ ...t })));
+  const { user } = useAuth();
+  const [trains, setTrains] = useState<TrainPosition[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [conflictFlash, setConflictFlash] = useState(false);
   const animRef = useRef<number>(0);
   const lastTime = useRef<number>(0);
-  const speeds: Record<string, number> = {
-    'TN-2034': 0.000035,
-    'TN-4417': 0.000028,
-    'TN-7823': 0.000018,
-    'TN-1199': 0.000030,
-    'TN-5502': 0.000022,
-  };
+
+  // Fetch real trains
+  const { data: apiTrains = [] } = useQuery({
+    queryKey: ['live-map-trains'],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) return [];
+      const res = await fetch(`${API_BASE}/api/trains/?section=${user?.section || 'NR-42'}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  // Sync API trains to internal animation state
+  useEffect(() => {
+    setTrains(prev => {
+      // Keep existing progress for trains still in list
+      const newTrainList = apiTrains.map((t: any, idx: number) => {
+        const existing = prev.find(pt => pt.trainId === t.id);
+        
+        // Deterministic segment mapping based on train ID if they don't have GPS
+        // We cycle through segments to spread them out
+        const segIdx = parseInt(t.id.replace(/\D/g, '') || idx.toString()) % TRACK_SEGMENTS.length;
+        const seg = TRACK_SEGMENTS[segIdx];
+        
+        return {
+          trainId: t.id,
+          priority: t.priority as TrainPriority,
+          progress: existing ? existing.progress : (Math.random()), // initial random pos
+          segFrom: seg.from,
+          segTo: seg.to,
+          speed: (t.speed || 60) * 0.0000005 // scale speed for SVG progress
+        };
+      });
+      return newTrainList;
+    });
+  }, [apiTrains]);
 
   // Animate train positions
   useEffect(() => {
@@ -57,10 +101,10 @@ export default function LiveTrackMap({ conflictSegment, onTrainClick }: Props) {
       const dt = timestamp - lastTime.current;
       lastTime.current = timestamp;
 
-      setTrains(prev => prev.map(t => {
-        let newProgress = (t.progress + (speeds[t.trainId] ?? 0.000025) * dt) % 1;
-        return { ...t, progress: newProgress };
-      }));
+      setTrains(prev => prev.map(t => ({
+        ...t,
+        progress: (t.progress + (t.speed || 0.000025) * dt) % 1
+      })));
 
       animRef.current = requestAnimationFrame(animate);
     };

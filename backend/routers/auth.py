@@ -49,6 +49,11 @@ class RegisterRequest(BaseModel):
     section: str = "NR-42"
 
 
+class SetupRequest(BaseModel):
+    email: str
+    password: str
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -230,6 +235,26 @@ async def get_all_users(
     ]
 
 
+@router.post("/setup")
+async def setup_account(body: SetupRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Invited user completes account setup: set password & activate.
+    """
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    
+    if not user or user.is_active:
+        raise HTTPException(status_code=400, detail="Invalid email or account is already active")
+        
+    user.hashed_password = get_password_hash(body.password)
+    user.is_active = True
+    
+    await _write_audit(db, user.id, "ACCOUNT_SETUP", entity=f"user:{user.id}")
+    await db.commit()
+    
+    return {"success": True}
+
+
 @router.post("/google-verify", response_model=TokenResponse)
 async def google_verify(request: GoogleVerifyRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -290,6 +315,11 @@ async def google_verify(request: GoogleVerifyRequest, db: AsyncSession = Depends
         # Update google_id if not yet set
         if not user.google_id:
             user.google_id = google_sub
+        
+        # IMPORTANT: If user was invited (is_active=False), successful Google login 
+        # proves identity and activates the account automatically.
+        if not user.is_active:
+            user.is_active = True
 
     await _write_audit(db, user.id, "GOOGLE_LOGIN", entity=f"user:{user.id}")
     await db.commit()

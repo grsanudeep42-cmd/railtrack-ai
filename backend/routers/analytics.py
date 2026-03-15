@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, Date, text
 
 from database import get_db
 from models import Train, Conflict, Decision, DecisionSourceEnum, TrainStatusEnum, User, PriorityEnum
@@ -19,99 +19,153 @@ router = APIRouter()
 
 
 class KPIResponse(BaseModel):
-    punctuality_pct: float       # % decisions with delay=0 / total, or % on-time trains
-    avg_delay_minutes: float     # avg delay across all trains
-    conflicts_resolved: int      # count conflicts where resolved=True
-    ai_acceptance_rate: float    # % decisions made by AI
-    throughput_today: int        # count of trains created/active today
-    override_rate: float         # % decisions made manually
+    punctuality_pct: float
+    avg_delay_minutes: float
+    conflicts_resolved: int
+    ai_acceptance_rate: float
+    throughput_today: int
+    override_rate: float
+    # Sparklines (last N days)
+    sparkline_delay: List[float]
+    sparkline_punctuality: List[float]
+    sparkline_throughput: List[int]
+    sparkline_conflicts: List[int]
+    sparkline_override: List[float]
+    sparkline_ai: List[float]
 
 
 @router.get("/kpis", response_model=KPIResponse)
 async def get_analytics_kpis(
+    period: int = Query(7, description="Days for sparkline history"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return all 6 KPIs computed from real PostgreSQL queries."""
+    """Return all 6 KPIs and their sparkline history arrays."""
 
-    # ── 1. Avg Delay: average of trains.delay column ─────────────────────────
-    avg_delay_result = await db.execute(
-        select(func.avg(Train.delay).label("avg_delay"))
-    )
-    avg_delay = avg_delay_result.scalar() or 0.0
-    avg_delay = round(float(avg_delay), 1)
+    # ── 1. Current Stats (Same logic as before) ─────────────────────────────
+    # ... but we'll also compute the sparklines below
 
-    # ── 2. Punctuality %: percentage of trains with delay == 0 ───────────────
-    total_trains_result = await db.execute(select(func.count(Train.id)))
-    total_trains = total_trains_result.scalar() or 0
-
-    on_time_result = await db.execute(
-        select(func.count(Train.id)).where(
-            (Train.delay == 0) | (Train.delay == None)
+    # Helper to get daily stats for sparklines
+    cutoff = datetime.utcnow() - timedelta(days=period)
+    
+    # Aggregated Sparkline Query
+    # Note: We group by date_trunc to get daily points
+    history_query = (
+        select(
+            func.date_trunc('day', Train.created_at).label('day'),
+            func.avg(Train.delay).label('avg_delay'),
+            func.count(Train.id).label('throughput'),
+            func.count(case((Train.delay == 0, Train.id), else_=None)).label('on_time')
         )
+        .where(Train.created_at >= cutoff)
+        .group_by(text('1'))
+        .order_by(text('1'))
     )
-    on_time_count = on_time_result.scalar() or 0
-    punctuality_pct = round((on_time_count / total_trains * 100) if total_trains > 0 else 0.0, 1)
-
-    # ── 3. Conflicts Resolved: count conflicts where resolved=True ────────────
-    resolved_result = await db.execute(
-        select(func.count(Conflict.id)).where(Conflict.resolved == True)
-    )
-    conflicts_resolved = resolved_result.scalar() or 0
-
-    # ── 4 & 6. Decision Metrics (AI acceptance %, override rate %) ───────────
-    total_decisions_result = await db.execute(select(func.count(Decision.id)))
-    total_decisions = total_decisions_result.scalar() or 0
-
-    ai_decisions_result = await db.execute(
-        select(func.count(Decision.id)).where(
-            Decision.source == DecisionSourceEnum.AI
+    history_result = await db.execute(history_query)
+    history_rows = history_result.all()
+    
+    # Conflict Sparkline
+    conflict_history_query = (
+        select(
+            func.date_trunc('day', Conflict.detected_at).label('day'),
+            func.count(Conflict.id).label('conflicts')
         )
+        .where(Conflict.detected_at >= cutoff)
+        .group_by(text('1'))
+        .order_by(text('1'))
     )
-    ai_decisions = ai_decisions_result.scalar() or 0
+    conflict_history_result = await db.execute(conflict_history_query)
+    conflict_rows = {r.day.date(): r.conflicts for r in conflict_history_result.all() if r.day}
 
-    manual_decisions_result = await db.execute(
-        select(func.count(Decision.id)).where(
-            Decision.source == DecisionSourceEnum.MANUAL
+    # Decision Sparkline (AI Acceptance & Override)
+    decision_history_query = (
+        select(
+            func.date_trunc('day', Decision.timestamp).label('day'),
+            func.count(Decision.id).label('total'),
+            func.count(case((Decision.source == DecisionSourceEnum.AI, Decision.id), else_=None)).label('ai'),
+            func.count(case((Decision.source == DecisionSourceEnum.MANUAL, Decision.id), else_=None)).label('manual')
         )
+        .where(Decision.timestamp >= cutoff)
+        .group_by(text('1'))
+        .order_by(text('1'))
     )
-    manual_decisions = manual_decisions_result.scalar() or 0
+    decision_history_result = await db.execute(decision_history_query)
+    decision_rows = {r.day.date(): r for r in decision_history_result.all() if r.day}
 
-    ai_acceptance_rate = round(
-        (ai_decisions / total_decisions * 100) if total_decisions > 0 else 0.0, 1
-    )
-    override_rate = round(
-        (manual_decisions / total_decisions * 100) if total_decisions > 0 else 0.0, 1
-    )
+    # Map history to fixed-length sparkline arrays
+    train_map = {r.day.date(): r for r in history_rows if r.day}
+    
+    spark_delay = []
+    spark_punct = []
+    spark_thru = []
+    spark_conf = []
+    spark_over = []
+    spark_ai = []
 
-    # ── 5. Throughput Today: trains created or active today ───────────────────
+    for i in range(period - 1, -1, -1):
+        d = (datetime.utcnow() - timedelta(days=i)).date()
+        
+        # Train metrics
+        tr = train_map.get(d)
+        spark_delay.append(round(float(tr.avg_delay or 0.0), 1) if tr else 0.0)
+        spark_thru.append(tr.throughput if tr else 0)
+        punct = round((tr.on_time / tr.throughput * 100), 1) if tr and tr.throughput > 0 else 0.0
+        spark_punct.append(punct)
+        
+        # Conflict metric
+        spark_conf.append(conflict_rows.get(d, 0))
+        
+        # Decision metrics
+        dr = decision_rows.get(d)
+        if dr and dr.total > 0:
+            spark_ai.append(round((dr.ai / dr.total * 100), 1))
+            spark_over.append(round((dr.manual / dr.total * 100), 1))
+        else:
+            spark_ai.append(0.0)
+            spark_over.append(0.0)
+
+    # Current Totals (same as before but using the variables we already have for throughput if possible)
+    # Re-running existing logic to ensure accuracy for the "Now" display
+    
+    avg_delay_res = await db.execute(select(func.avg(Train.delay)))
+    curr_avg_delay = round(float(avg_delay_res.scalar() or 0.0), 1)
+
+    total_t_res = await db.execute(select(func.count(Train.id)))
+    total_t = total_t_res.scalar() or 0
+    on_t_res = await db.execute(select(func.count(Train.id)).where((Train.delay == 0) | (Train.delay == None)))
+    curr_punct = round((on_t_res.scalar() or 0) / total_t * 100, 1) if total_t > 0 else 0.0
+
+    res_res = await db.execute(select(func.count(Conflict.id)).where(Conflict.resolved == True))
+    curr_res = res_res.scalar() or 0
+
+    dec_res = await db.execute(select(
+        func.count(Decision.id),
+        func.count(case((Decision.source == DecisionSourceEnum.AI, Decision.id), else_=None)),
+        func.count(case((Decision.source == DecisionSourceEnum.MANUAL, Decision.id), else_=None))
+    ))
+    d_row = dec_res.one()
+    curr_ai = round((d_row[1] / d_row[0] * 100), 1) if d_row[0] > 0 else 0.0
+    curr_over = round((d_row[2] / d_row[0] * 100), 1) if d_row[0] > 0 else 0.0
+
     today_start = datetime.combine(date.today(), datetime.min.time())
-    throughput_result = await db.execute(
-        select(func.count(Train.id)).where(
-            Train.created_at >= today_start
-        )
-    )
-    throughput_today = throughput_result.scalar() or 0
-
-    # If no trains created today (seeded data), count all running/active trains
-    if throughput_today == 0:
-        active_statuses = [
-            TrainStatusEnum.RUNNING,
-            TrainStatusEnum.ON_TIME,
-            TrainStatusEnum.DELAYED,
-        ]
-        throughput_result = await db.execute(
-            select(func.count(Train.id)).where(Train.status.in_(active_statuses))
-        )
-        throughput_today = throughput_result.scalar() or total_trains
+    thru_res = await db.execute(select(func.count(Train.id)).where(Train.created_at >= today_start))
+    curr_thru = thru_res.scalar() or 0
+    if curr_thru == 0:
+        curr_thru = (await db.execute(select(func.count(Train.id)).where(Train.status.in_([TrainStatusEnum.RUNNING, TrainStatusEnum.ON_TIME, TrainStatusEnum.DELAYED])))).scalar() or total_t
 
     return KPIResponse(
-        punctuality_pct=punctuality_pct,
-        avg_delay_minutes=avg_delay,
-        conflicts_resolved=conflicts_resolved,
-        ai_acceptance_rate=ai_acceptance_rate,
-        throughput_today=throughput_today,
-        override_rate=override_rate,
+        punctuality_pct=curr_punct,
+        avg_delay_minutes=curr_avg_delay,
+        conflicts_resolved=curr_res,
+        ai_acceptance_rate=curr_ai,
+        throughput_today=curr_thru,
+        override_rate=curr_over,
+        sparkline_delay=spark_delay,
+        sparkline_punctuality=spark_punct,
+        sparkline_throughput=spark_thru,
+        sparkline_conflicts=spark_conf,
+        sparkline_override=spark_over,
+        sparkline_ai=spark_ai
     )
 
 
@@ -134,12 +188,28 @@ async def get_delay_chart(
             func.avg(case((Train.priority == PriorityEnum.LOCAL, Train.delay), else_=None)).label('local'),
         )
         .where(Train.created_at >= cutoff)
-        .group_by(func.date_trunc('day', Train.created_at))
-        .order_by(func.date_trunc('day', Train.created_at))
+        .group_by(text('1'))
+        .order_by(text('1'))
     )
     result = await db.execute(query)
     rows = result.all()
     
+    # Fallback: if no data in period, fetch all-time data spread across last N days
+    if not rows:
+        fallback_query = (
+            select(
+                func.avg(case((Train.priority == PriorityEnum.EXPRESS, Train.delay), else_=None)).label('express'),
+                func.avg(case((Train.priority == PriorityEnum.FREIGHT, Train.delay), else_=None)).label('freight'),
+                func.avg(case((Train.priority == PriorityEnum.LOCAL, Train.delay), else_=None)).label('local'),
+            )
+        )
+        fb = (await db.execute(fallback_query)).one()
+        return [{"time": (datetime.utcnow() - timedelta(days=i)).strftime("%a"),
+                 "express": round(float(fb.express or 0), 1),
+                 "freight": round(float(fb.freight or 0), 1),
+                 "local": round(float(fb.local or 0), 1)}
+                for i in range(period - 1, -1, -1)]
+                
     lookup = {row.day_date.date(): row for row in rows if row.day_date}
     chart_data = []
     
@@ -185,12 +255,28 @@ async def get_throughput_chart(
             func.count(case((Train.priority == PriorityEnum.LOCAL, Train.id), else_=None)).label('local'),
         )
         .where(Train.created_at >= cutoff)
-        .group_by(func.date_trunc('day', Train.created_at))
-        .order_by(func.date_trunc('day', Train.created_at))
+        .group_by(text('1'))
+        .order_by(text('1'))
     )
     result = await db.execute(query)
     rows = result.all()
     
+    # Fallback: if no data in period, fetch all-time data spread evenly
+    if not rows:
+        fallback_query = (
+            select(
+                func.count(case((Train.priority == PriorityEnum.EXPRESS, Train.id), else_=None)).label('express'),
+                func.count(case((Train.priority == PriorityEnum.FREIGHT, Train.id), else_=None)).label('freight'),
+                func.count(case((Train.priority == PriorityEnum.LOCAL, Train.id), else_=None)).label('local'),
+            )
+        )
+        fb = (await db.execute(fallback_query)).one()
+        return [{"time": (datetime.utcnow() - timedelta(days=i)).strftime("%a"),
+                 "express": (fb.express or 0) // period,
+                 "freight": (fb.freight or 0) // period,
+                 "local": (fb.local or 0) // period}
+                for i in range(period - 1, -1, -1)]
+
     lookup = {row.day_date.date(): row for row in rows if row.day_date}
     chart_data = []
     
@@ -302,12 +388,12 @@ async def get_ai_acceptance(
         select(
             func.date_trunc('day', Conflict.detected_at).label('day_date'),
             func.count(Conflict.id.distinct()).label('total'),
-            func.count(Decision.id).filter(Decision.action == 'ACCEPT_AI').label('accepted')
+            func.count(case((Decision.action == 'ACCEPT_AI', Decision.id), else_=None)).label('accepted')
         )
         .select_from(Conflict)
         .outerjoin(Decision, Conflict.id == Decision.conflict_id)
         .where(Conflict.detected_at >= datetime.utcnow() - timedelta(days=period))
-        .group_by(func.date_trunc('day', Conflict.detected_at))
+        .group_by(text('1'))
     )
     result = await db.execute(query)
     rows = result.all()
@@ -337,3 +423,51 @@ async def get_ai_acceptance(
             })
             
     return chart_data
+
+
+class SummaryResponse(BaseModel):
+    trains_today: int
+    avg_delay_reduction: float
+    uptime_percentage: float
+
+@router.get("/summary", response_model=SummaryResponse)
+async def get_analytics_summary(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public summary stats for landing page.
+    - trains_today: count trains updated/active today
+    - avg_delay_reduction: week vs week % improvement
+    - uptime_percentage: resolved / total conflicts proxy
+    """
+    now = datetime.utcnow()
+    today_start = datetime.combine(now.date(), datetime.min.time())
+    
+    # 1. Trains Today
+    trains_today = (await db.execute(select(func.count(Train.id)).where(Train.created_at >= today_start))).scalar() or 0
+    if trains_today == 0:
+        # Fallback to total if no data today
+        trains_today = (await db.execute(select(func.count(Train.id)))).scalar() or 0
+
+    # 2. Avg Delay Reduction (current week vs previous week)
+    week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
+    
+    avg_curr = (await db.execute(select(func.avg(Train.delay)).where(Train.created_at >= week_ago))).scalar() or 0
+    avg_prev = (await db.execute(select(func.avg(Train.delay)).where((Train.created_at >= two_weeks_ago) & (Train.created_at < week_ago)))).scalar() or 1 # avoid devIDE by 0
+    
+    # % improvement = (prev - curr) / prev * 100
+    reduction = round(((float(avg_prev) - float(avg_curr)) / float(avg_prev) * 100), 1) if avg_prev > 0 else 0.0
+    if reduction < 0: reduction = 0.0 # Clamp to 0 if delay increased
+
+    # 3. Uptime Percentage Proxy (resolved / total conflicts)
+    total_conf = (await db.execute(select(func.count(Conflict.id)))).scalar() or 0
+    res_conf = (await db.execute(select(func.count(Conflict.id)).where(Conflict.resolved == True))).scalar() or 0
+    
+    uptime = round((res_conf / total_conf * 100), 2) if total_conf > 0 else 0.0
+
+    return SummaryResponse(
+        trains_today=trains_today,
+        avg_delay_reduction=reduction,
+        uptime_percentage=uptime
+    )

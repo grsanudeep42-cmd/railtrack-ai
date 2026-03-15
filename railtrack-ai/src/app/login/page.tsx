@@ -9,24 +9,17 @@ const ROLES: { key: UserRole; icon: string; label: string; desc: string }[] = [
   { key: 'ADMIN',       icon: '⚙️', label: 'System Administrator',   desc: 'Users, config, system health' },
 ];
 
-const DEMO_CREDS: Record<UserRole, { email: string; password: string }> = {
-  CONTROLLER: { email: 'controller@demo.rail', password: 'demo1234' },
-  SUPERVISOR: { email: 'supervisor@demo.rail', password: 'demo1234' },
-  LOGISTICS:  { email: 'logistics@demo.rail',  password: 'demo1234' },
-  ADMIN:      { email: 'admin@demo.rail',       password: 'demo1234' },
-};
-
 export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState<UserRole>('CONTROLLER');
   const [email, setEmail] = useState('controller@demo.rail');
-  const [password, setPassword] = useState('demo1234');
+  const [password, setPassword] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const { login, isLoading, error } = useAuth();
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
-    setEmail(DEMO_CREDS[role].email);
-    setPassword(DEMO_CREDS[role].password);
+    setEmail(`${role.toLowerCase()}@demo.rail`);
+    // Note: Intentional removal of password auto-fill to prevent shipping plaintext keys in JS bundle
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -196,8 +189,8 @@ export default function LoginPage() {
               DEMO CREDENTIALS
             </div>
             <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Email: {DEMO_CREDS[selectedRole].email}<br />
-              Password: {DEMO_CREDS[selectedRole].password}
+              Email: {selectedRole.toLowerCase()}@demo.rail<br />
+              Password: demo1234 <span style={{ color: 'var(--text-muted)' }}>(dev environment only)</span>
             </div>
           </div>
         </div>

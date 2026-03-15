@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import LiveTrackMap from '@/components/LiveTrackMap';
 import AIRecommendation from '@/components/AIRecommendation';
 import { Train, Conflict, TrainPriority } from '@/lib/mockData';
+import { API_BASE } from '@/lib/api';
 
 // Helper to grab token on the client
 function getClientToken() {
@@ -65,7 +66,7 @@ export default function ControllerDashboard() {
       const digitsOnly = trainId.replace(/\D/g, '');
       const num = digitsOnly.length > 0 ? digitsOnly : trainId;
       
-      const res = await fetch(`http://localhost:8000/api/trains/live/${num}`, {
+      const res = await fetch(`${API_BASE}/api/trains/live/${num}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to fetch live data');
@@ -87,7 +88,7 @@ export default function ControllerDashboard() {
 
       // Also silently fetch name/origin/destination to update DB and local state
       try {
-        await fetch(`http://localhost:8000/api/trains/info/${num}`, {
+        await fetch(`${API_BASE}/api/trains/info/${num}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } catch (e) {
@@ -130,7 +131,7 @@ export default function ControllerDashboard() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      const res = await fetch(`http://localhost:8000/api/trains/?section=${user?.section || 'NR-42'}`, {
+      const res = await fetch(`${API_BASE}/api/trains/?section=${user?.section || 'NR-42'}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -145,7 +146,7 @@ export default function ControllerDashboard() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      const res = await fetch('http://localhost:8000/api/conflicts/', {
+      const res = await fetch(`${API_BASE}/api/conflicts/`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -165,6 +166,23 @@ export default function ControllerDashboard() {
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [connectionState, setConnectionState] = useState<'ws' | 'polling'>('ws');
 
+  // Disruptions feed
+  const { data: disruptions = [], isLoading: loadingDisruptions } = useQuery<{ icon: string; text: string; time: string; severity: string }[]>({
+    queryKey: ['disruptions', user?.section],
+    queryFn: async () => {
+      const token = getClientToken();
+      if (!token) throw new Error('No token');
+      const res = await fetch(`${API_BASE}/api/disruptions/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) window.location.href = '/login';
+      if (!res.ok) throw new Error('Failed to fetch disruptions');
+      return res.json();
+    },
+    refetchInterval: 10000,
+    enabled: !!user,
+  });
+
   useEffect(() => {
     if (serverConflicts.length > 0 && conflicts.length === 0) setConflicts(serverConflicts);
   }, [serverConflicts, conflicts.length]);
@@ -177,7 +195,7 @@ export default function ControllerDashboard() {
 
     const connect = () => {
       try {
-        ws = new WebSocket('ws://localhost:8000/ws/telemetry');
+        ws = new WebSocket(`${API_BASE.replace('http', 'ws')}/ws/telemetry`);
         
         ws.onopen = () => {
           retryCount = 0;
@@ -213,8 +231,9 @@ export default function ControllerDashboard() {
   }, []);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'ai'; text: string }[]>([
-    { role: 'ai', text: 'Hello! I\'m your AI assistant. Ask me about conflicts, train status, or optimization suggestions for section NR-42.' }
+    { role: 'ai', text: 'Hello! I\'m your AI assistant powered by Claude. Ask me about conflicts, train status, or optimization suggestions for your section.' }
   ]);
 
   // Trigger a conflict scenario every 30 seconds
@@ -239,17 +258,17 @@ export default function ControllerDashboard() {
   const handleAccept = useCallback(async (conflict: Conflict) => {
     try {
       const token = getClientToken();
-      const res = await fetch(`http://localhost:8000/api/conflicts/${conflict.id}/resolve`, {
+      const res = await fetch(`${API_BASE}/api/conflicts/${conflict.id}/resolve`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          action: `AI recommendation accepted — ${conflict.trainA} vs ${conflict.trainB} resolved`,
+          action: 'ACCEPT_AI',
           operator_id: user?.id ?? 'system',
           source: 'AI',
-          notes: 'Auto-resolved via UI dashboard'
+          notes: `AI recommendation accepted — ${conflict.trainA} vs ${conflict.trainB} resolved`
         })
       });
       
@@ -287,26 +306,38 @@ export default function ControllerDashboard() {
     setActiveConflict(null);
   }, [user]);
 
-  const handleChat = useCallback((e: React.FormEvent) => {
+  const handleChat = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || chatLoading) return;
     const userMsg = chatInput.trim();
     setChatInput('');
     setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
-    // Simulate AI response
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        default: `Based on current section NR-42 data: 2 active conflicts, overall punctuality at 84.2%. Recommend monitoring TN-1199 at Junction J-2.`,
-        delay:   `Current average delay is 7.4 minutes. TN-4417 is delayed by 12 min, TN-3345 by 22 min. Suggest prioritizing express trains.`,
-        conflict:`Active conflicts: CF-001 (TN-1199 vs TN-7823 at J-2, HIGH) and CF-002 (TN-4417 vs TN-5502 at Platform 1). Accept AI recommendations to save 18 mins total delay.`,
+    setChatLoading(true);
+    try {
+      const token = getClientToken();
+      const payload = {
+        message: userMsg,
+        section: user?.section || 'NR-42',
       };
-      const lower = userMsg.toLowerCase();
-      const response = lower.includes('delay') ? responses.delay
-        : lower.includes('conflict') ? responses.conflict
-        : responses.default;
-      setChatHistory(prev => [...prev, { role: 'ai', text: response }]);
-    }, 1200);
-  }, [chatInput]);
+      console.log("AI payload:", JSON.stringify(payload));
+      
+      const res = await fetch(`${API_BASE}/api/ai/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('AI service error');
+      const data = await res.json();
+      setChatHistory(prev => [...prev, { role: 'ai', text: data.reply }]);
+    } catch {
+      setChatHistory(prev => [...prev, { role: 'ai', text: 'AI service is temporarily unavailable. Please ensure GROQ_API_KEY is set on the backend.' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [chatInput, chatLoading, user]);
 
   const hoveredTrain = selectedTrain ? trains.find(t => t.id === selectedTrain) : null;
 
@@ -315,7 +346,7 @@ export default function ControllerDashboard() {
       {/* Demo Banner */}
       {user?.isDemo && (
         <div className="demo-banner">
-          ⚠ DEMO MODE — Section NR-42 (New Delhi–Jhansi Corridor) &nbsp;|&nbsp; User: {user.name} [{user.role}]
+          ⚠ DEMO MODE — Section {user?.section || 'NR-42'} &nbsp;|&nbsp; User: {user.name} [{user.role}]
         </div>
       )}
 
@@ -367,7 +398,7 @@ export default function ControllerDashboard() {
             <div className="panel-header" style={{ marginBottom: '12px' }}>Section Info</div>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Section: </span>
-              <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--accent-primary)' }}>NR-42</span>
+              <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--accent-primary)' }}>{user?.section || 'NR-42'}</span>
             </div>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Zone: </span>Northern Railway
@@ -516,7 +547,7 @@ export default function ControllerDashboard() {
           {/* Section header */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bg-border)', display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-surface)' }}>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)' }}>
-              NR / NR-42 / <span style={{ color: 'var(--text-secondary)' }}>Controller View</span>
+              NR / {user?.section || 'NR-42'} / <span style={{ color: 'var(--text-secondary)' }}>Controller View</span>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {conflicts.length > 0 && (
@@ -599,9 +630,9 @@ export default function ControllerDashboard() {
                     {liveTrainData[hoveredTrain.id]?.isLive ? (
                       <div style={{ 
                         fontFamily: 'var(--font-jetbrains)', fontSize: '14px', 
-                        color: liveTrainData[hoveredTrain.id].delay === 0 ? 'var(--accent-safe)' : liveTrainData[hoveredTrain.id].delay <= 30 ? 'var(--accent-warn)' : 'var(--accent-danger)' 
+                        color: (liveTrainData[hoveredTrain.id].delay ?? 0) === 0 ? 'var(--accent-safe)' : (liveTrainData[hoveredTrain.id].delay ?? 0) <= 30 ? 'var(--accent-warn)' : 'var(--accent-danger)' 
                       }}>
-                        {liveTrainData[hoveredTrain.id].delay === 0 ? 'On Time' : `+${liveTrainData[hoveredTrain.id].delay} min`}
+                        {(liveTrainData[hoveredTrain.id].delay ?? 0) === 0 ? 'On Time' : `+${liveTrainData[hoveredTrain.id].delay} min`}
                       </div>
                     ) : (
                       <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '14px', color: 'var(--accent-warn)' }}>
@@ -681,18 +712,25 @@ export default function ControllerDashboard() {
             <div style={{ padding: '12px 16px' }}>
               <span className="panel-header">Incoming Disruptions</span>
             </div>
-            {[
-              { icon: '🌧️', text: 'Heavy rain alert — Agra–Gwalior segment', time: '15:30', severity: 'warn' },
-              { icon: '🔧', text: 'Track maintenance window — Signal S-07', time: '18:00', severity: 'rail' },
-            ].map((d, i) => (
-              <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--bg-border)', display: 'flex', gap: '10px' }}>
-                <span style={{ fontSize: '16px' }}>{d.icon}</span>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{d.text}</div>
-                  <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{d.time}</div>
-                </div>
+            {loadingDisruptions ? (
+              <div style={{ padding: '16px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', fontFamily: 'var(--font-space-mono)' }}>
+                Loading...
               </div>
-            ))}
+            ) : disruptions.length === 0 ? (
+              <div style={{ padding: '16px', fontSize: '12px', color: 'var(--accent-safe)', textAlign: 'center', fontFamily: 'var(--font-space-mono)' }}>
+                ✓ NO ACTIVE DISRUPTIONS
+              </div>
+            ) : (
+              disruptions.map((d, i) => (
+                <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid var(--bg-border)', display: 'flex', gap: '10px' }}>
+                  <span style={{ fontSize: '16px' }}>{d.icon}</span>
+                  <div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{d.text}</div>
+                    <div style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{d.time}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Recent Decisions */}
@@ -738,14 +776,32 @@ export default function ControllerDashboard() {
                   {msg.text}
                 </div>
               ))}
+              {/* Typing indicator while waiting for Claude */}
+              {chatLoading && (
+                <div style={{
+                  padding: '8px 12px', borderRadius: '6px', fontSize: '12px',
+                  background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.15)',
+                  alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                }}>
+                  <span style={{ fontFamily: 'var(--font-space-mono)', fontSize: '9px', color: 'var(--accent-primary)' }}>AI ▸</span>
+                  {[0, 1, 2].map(i => (
+                    <span key={i} style={{
+                      width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent-primary)',
+                      display: 'inline-block', animation: 'pulse-live 1s ease-in-out infinite',
+                      animationDelay: `${i * 0.2}s`, opacity: 0.7,
+                    }} />
+                  ))}
+                </div>
+              )}
             </div>
             <form onSubmit={handleChat} style={{ padding: '12px', borderTop: '1px solid var(--bg-border)', display: 'flex', gap: '8px' }}>
               <input
                 className="input"
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
-                placeholder="Ask about section NR-42..."
-                style={{ fontSize: '12px', padding: '8px 12px' }}
+                placeholder="Ask about your section..."
+                disabled={chatLoading}
+                style={{ fontSize: '12px', padding: '8px 12px', opacity: chatLoading ? 0.6 : 1 }}
               />
               <button type="submit" className="btn-primary" style={{ padding: '8px 12px', fontSize: '12px', flexShrink: 0 }}>→</button>
             </form>

@@ -96,7 +96,7 @@ async def get_active_conflicts(
 @router.post("/{conflict_id}/resolve", response_model=ConflictResponse)
 async def resolve_conflict(
     conflict_id: str,
-    body: ResolveRequest,
+    body: Optional[dict] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -117,7 +117,7 @@ async def resolve_conflict(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conflict is already resolved")
 
     valid_actions = {"ACCEPT_AI", "MANUAL_OVERRIDE"}
-    action_upper = body.action.upper()
+    action_upper = body.get("action", "ACCEPT_AI").upper() if body else "ACCEPT_AI"
     if action_upper not in valid_actions:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -134,13 +134,14 @@ async def resolve_conflict(
     source = DecisionSourceEnum.AI if action_upper == "ACCEPT_AI" else DecisionSourceEnum.MANUAL
 
     # Insert Decision
+    notes_val = body.get("notes") if body else None
     decision = Decision(
         id=f"D-{uuid.uuid4().hex[:8].upper()}",
         conflict_id=conflict_id,
         action=action_upper,
         operator_id=current_user.id,
         source=source,
-        notes=body.notes,
+        notes=notes_val,
     )
     db.add(decision)
 
@@ -149,7 +150,7 @@ async def resolve_conflict(
         user_id=current_user.id,
         action="RESOLVE_CONFLICT",
         entity=f"conflict:{conflict_id}",
-        detail=f"Action={action_upper}, Source={source.value}, Notes={body.notes or 'N/A'}",
+        detail=f"Action={action_upper}, Source={source.value}, Notes={notes_val or 'N/A'}",
     )
     db.add(audit)
 

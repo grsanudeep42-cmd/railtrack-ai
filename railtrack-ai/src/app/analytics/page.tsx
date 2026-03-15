@@ -3,11 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { useQuery } from '@tanstack/react-query';
+import { API_BASE } from '@/lib/api';
 import {
-  SPARKLINE_DELAY, SPARKLINE_PUNCTUALITY, SPARKLINE_THROUGHPUT,
-  SPARKLINE_CONFLICTS, SPARKLINE_OVERRIDE, SPARKLINE_AI,
-  AI_ACCEPTANCE_CHART,
-  MOCK_INCIDENTS
+  TrainPriority, TrainStatus, SignalState, Train, Conflict, Decision, KPIData
 } from '@/lib/mockData';
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
@@ -85,7 +83,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      const res = await fetch('http://localhost:8000/api/analytics/kpis', {
+      const res = await fetch(`${API_BASE}/api/analytics/kpis`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
@@ -97,18 +95,23 @@ export default function AnalyticsPage() {
         ai_acceptance_rate: number;
         throughput_today: number;
         override_rate: number;
+        sparkline_delay: number[];
+        sparkline_punctuality: number[];
+        sparkline_throughput: number[];
+        sparkline_conflicts: number[];
+        sparkline_override: number[];
+        sparkline_ai: number[];
       }>;
     },
     refetchInterval: 30000,
   });
 
-  // ── Fetch real Chart Data ────────────────────────────────────────────────
   const { data: delayData = [], isLoading: delayLoading } = useQuery({
     queryKey: ['analytics-delay', 7],
     queryFn: async () => {
       const token = getClientToken();
       if (!token) return [];
-      const res = await fetch('http://localhost:8000/api/analytics/delay-chart?period=7', {
+      const res = await fetch(`${API_BASE}/api/analytics/delay-chart?period=7`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -121,7 +124,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) return [];
-      const res = await fetch('http://localhost:8000/api/analytics/throughput-chart?period=7', {
+      const res = await fetch(`${API_BASE}/api/analytics/throughput-chart?period=7`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -134,7 +137,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) return [];
-      const res = await fetch('http://localhost:8000/api/analytics/heatmap', {
+      const res = await fetch(`${API_BASE}/api/analytics/heatmap`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -147,7 +150,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) return [];
-      const res = await fetch('http://localhost:8000/api/analytics/incidents', {
+      const res = await fetch(`${API_BASE}/api/analytics/incidents`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -161,7 +164,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) return [];
-      const res = await fetch('http://localhost:8000/api/analytics/ai-acceptance?period=14', {
+      const res = await fetch(`${API_BASE}/api/analytics/ai-acceptance?period=14`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -223,7 +226,7 @@ export default function AnalyticsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ fontFamily: 'var(--font-space-mono)', fontSize: '24px', fontWeight: 700 }}>Performance Analytics</h1>
-              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>Section NR-42 · Last 7 Days Overview</p>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>Section {user?.section || 'NR-42'} · Last 7 Days Overview</p>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
               <select className="input" style={{ width: '200px', height: '36px', padding: '0 12px' }}>
@@ -232,7 +235,7 @@ export default function AnalyticsPage() {
                 <option>Yesterday</option>
               </select>
               <select className="input" style={{ width: '200px', height: '36px', padding: '0 12px' }}>
-                <option>Section: NR-42 (Default)</option>
+                <option>Section: {user?.section || 'NR-42'} (Default)</option>
                 <option>Zone: Northern (All)</option>
               </select>
             </div>
@@ -245,7 +248,7 @@ export default function AnalyticsPage() {
               value={kpiData?.avg_delay_minutes ?? 0} 
               suffix="m" 
               delta={0} 
-              data={SPARKLINE_DELAY} 
+              data={kpiData?.sparkline_delay ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-warn)" 
               loading={kpiLoading} 
             />
@@ -254,7 +257,7 @@ export default function AnalyticsPage() {
               value={kpiData?.punctuality_pct ?? 0} 
               suffix="%" 
               delta={0} 
-              data={SPARKLINE_PUNCTUALITY} 
+              data={kpiData?.sparkline_punctuality ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-safe)" 
               loading={kpiLoading} 
             />
@@ -263,7 +266,7 @@ export default function AnalyticsPage() {
               value={kpiData?.throughput_today ?? 0} 
               precision={0} 
               delta={0} 
-              data={SPARKLINE_THROUGHPUT} 
+              data={kpiData?.sparkline_throughput ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-primary)" 
               loading={kpiLoading} 
             />
@@ -272,7 +275,7 @@ export default function AnalyticsPage() {
               value={kpiData?.conflicts_resolved ?? 0} 
               precision={0}
               delta={0} 
-              data={SPARKLINE_CONFLICTS} 
+              data={kpiData?.sparkline_conflicts ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-danger)" 
               loading={kpiLoading} 
             />
@@ -281,7 +284,7 @@ export default function AnalyticsPage() {
               value={kpiData?.override_rate ?? 0} 
               suffix="%" 
               delta={0} 
-              data={SPARKLINE_OVERRIDE} 
+              data={kpiData?.sparkline_override ?? [0,0,0,0,0,0,0]} 
               color="var(--text-muted)" 
               loading={kpiLoading} 
             />
@@ -290,7 +293,7 @@ export default function AnalyticsPage() {
               value={kpiData?.ai_acceptance_rate ?? 0} 
               suffix="%" 
               delta={0} 
-              data={SPARKLINE_AI} 
+              data={kpiData?.sparkline_ai ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-rail)" 
               loading={kpiLoading} 
             />
@@ -311,17 +314,19 @@ export default function AnalyticsPage() {
               {delayLoading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={delayData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                    <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
-                    <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={delayData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
 
@@ -332,17 +337,19 @@ export default function AnalyticsPage() {
               {throughputLoading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={throughputData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                    <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                    <Bar dataKey="express" stackId="a" fill="#00D4FF" radius={[0, 0, 4, 4]} />
-                    <Bar dataKey="freight" stackId="a" fill="#F59E0B" />
-                    <Bar dataKey="local" stackId="a" fill="#6366F1" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={throughputData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                      <Bar dataKey="express" stackId="a" fill="#00D4FF" radius={[0, 0, 4, 4]} />
+                      <Bar dataKey="freight" stackId="a" fill="#F59E0B" />
+                      <Bar dataKey="local" stackId="a" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
 
@@ -357,21 +364,23 @@ export default function AnalyticsPage() {
               {aiAcceptanceLoading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={aiAcceptanceData}>
-                    <defs>
-                      <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                    <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} minTickGap={30} />
-                    <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} domain={[60, 100]} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="acceptance" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorAI)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={aiAcceptanceData}>
+                      <defs>
+                        <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                      <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} minTickGap={30} />
+                      <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} domain={[60, 100]} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area type="monotone" dataKey="acceptance" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorAI)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
 

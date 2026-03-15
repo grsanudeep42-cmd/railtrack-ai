@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { API_BASE } from '@/lib/api';
 
 function AnimatedCounter({ target, suffix = '', duration = 2000 }: { target: number; suffix?: string; duration?: number }) {
   const [count, setCount] = useState(0);
@@ -72,7 +73,28 @@ const ARCH_NODES = [
 
 export default function LandingPage() {
   const [visible, setVisible] = useState(false);
-  useEffect(() => { setVisible(true); }, []);
+  const [stats, setStats] = useState<{
+    trains_today: number | null;
+    avg_delay_reduction: number | null;
+    uptime_percentage: number | null;
+  }>({
+    trains_today: null,
+    avg_delay_reduction: null,
+    uptime_percentage: null
+  });
+
+  useEffect(() => { 
+    setVisible(true); 
+    // Fetch live summary stats
+    fetch(`${API_BASE}/api/analytics/summary`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.trains_today) {
+          setStats(data);
+        }
+      })
+      .catch(err => console.error('Failed to fetch hero stats:', err));
+  }, []);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
@@ -135,13 +157,17 @@ export default function LandingPage() {
       <section style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--bg-border)', borderBottom: '1px solid var(--bg-border)', padding: '48px 24px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '48px', textAlign: 'center' }}>
           {[
-            { value: 847, suffix: '+', label: 'Trains Managed Daily' },
-            { value: 34, suffix: '%', label: 'Avg Delay Reduction' },
-            { value: 99, suffix: '.97%', label: 'System Uptime' },
+            { value: stats.trains_today, suffix: '+', label: 'Trains Managed Daily' },
+            { value: stats.avg_delay_reduction, suffix: '%', label: 'Avg Delay Reduction' },
+            { value: stats.uptime_percentage, suffix: '%', label: 'System Uptime' },
           ].map((stat, i) => (
             <div key={i}>
               <div style={{ fontSize: '48px', fontWeight: 700, lineHeight: 1 }}>
-                <AnimatedCounter target={stat.value} suffix={stat.suffix} duration={2200 + i * 300} />
+                {stat.value !== null ? (
+                  <AnimatedCounter target={Math.floor(stat.value)} suffix={stat.suffix} duration={2200 + i * 300} />
+                ) : (
+                  <span style={{ opacity: 0.3, animation: 'pulse-live 1.5s infinite' }}>—</span>
+                )}
               </div>
               <div style={{ fontFamily: 'var(--font-space-mono)', fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginTop: '8px', textTransform: 'uppercase' }}>
                 {stat.label}

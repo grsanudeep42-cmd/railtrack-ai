@@ -27,8 +27,9 @@ class PrecedenceOptimizer:
             # Start and End times
             scheduled_arrival = int(t.get('scheduled_arrival', 0))
             # upper bound: 48 hours for schedule
-            start = self.model.NewIntVar(scheduled_arrival, 2880, f'start_{i}')
-            end = self.model.NewIntVar(scheduled_arrival + duration, 2880, f'end_{i}')
+            horizon = max(2880, scheduled_arrival + duration + 1440)
+            start = self.model.NewIntVar(scheduled_arrival, horizon, f'start_{i}')
+            end = self.model.NewIntVar(scheduled_arrival + duration, horizon + duration, f'end_{i}')
             interval = self.model.NewIntervalVar(start, duration, end, f'interval_{i}')
             
             starts.append(start)
@@ -45,13 +46,13 @@ class PrecedenceOptimizer:
             scheduled_arrival = int(t.get('scheduled_arrival', 0))
             
             # Delay is difference between scheduled arrival and actual start time
-            delay = self.model.NewIntVar(0, 2880, f'delay_{i}')
+            delay = self.model.NewIntVar(0, 4320, f'delay_{i}')
             self.model.Add(delay == starts[i] - scheduled_arrival)
             
             priority_str = str(t.get('priority', 'FREIGHT')).upper()
             weight = priority_weights.get(priority_str, 1)
             
-            weighted_delay = self.model.NewIntVar(0, 2880 * 10, f'weighted_delay_{i}')
+            weighted_delay = self.model.NewIntVar(0, 4320 * 10, f'weighted_delay_{i}')
             self.model.Add(weighted_delay == delay * weight)
             delay_vars.append(weighted_delay)
             
@@ -71,18 +72,22 @@ class PrecedenceOptimizer:
                 end_val = solver.Value(ends[i])
                 delay_val = start_val - int(t.get('scheduled_arrival', 0))
                 
-                # Explanation string
+                # Clean action enum for Gantt colour-coding
                 if delay_val == 0:
-                    action = "Clear path — proceed immediately"
+                    action = "PROCEED"
+                elif delay_val <= 30:
+                    action = "HOLD"
                 else:
-                    action = f"Hold for {delay_val}m, then proceed"
-                    
+                    action = "REROUTE"
+
                 schedule.append({
                     "train": t['id'],
+                    "train_number": t['id'],
                     "start": start_val,
                     "end": end_val,
+                    "scheduled_arrival": int(t.get('scheduled_arrival', 0)),
                     "delay_minutes": delay_val,
-                    "action": action
+                    "action": action,
                 })
         
         # Sort schedule by start time chronologically

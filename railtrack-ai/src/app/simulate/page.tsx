@@ -4,6 +4,8 @@ import Link from 'next/link';
 import LiveTrackMap from '@/components/LiveTrackMap';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Train } from '@/lib/mockData';
+import { API_BASE } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 // Helper to grab token on the client
 function getClientToken() {
@@ -14,6 +16,7 @@ function getClientToken() {
 type SimState = 'IDLE' | 'RUNNING' | 'RESULTS';
 
 export default function SimulatePage() {
+  const { user } = useAuth();
   const [simState, setSimState] = useState<SimState>('IDLE');
   const [selectedTrains, setSelectedTrains] = useState<string[]>([]);
   const [objective, setObjective] = useState('DELAY');
@@ -27,7 +30,7 @@ export default function SimulatePage() {
     queryFn: async () => {
       const token = getClientToken();
       if (!token) throw new Error('No token');
-      const res = await fetch('http://localhost:8000/api/trains/?section=NR-42', {
+      const res = await fetch(`${API_BASE}/api/trains/?section=${user?.section || 'NR-42'}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) window.location.href = '/login';
@@ -45,7 +48,7 @@ export default function SimulatePage() {
   const simulateMutation = useMutation({
     mutationFn: async (payload: any) => {
       const token = getClientToken();
-      const res = await fetch('http://localhost:8000/api/simulate/run', {
+      const res = await fetch(`${API_BASE}/api/simulate/run`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -149,7 +152,7 @@ export default function SimulatePage() {
                 <select className="input" value={disruptionLocation} onChange={e => setDisruptionLocation(e.target.value)}>
                   <option value="AGC">Agra Cantt (J1)</option>
                   <option value="GWL">Gwalior (J2)</option>
-                  <option value="NR-42">Track Seg NR-42</option>
+                  <option value={user?.section || 'NR-42'}>Seg: {user?.section || 'NR-42'}</option>
                 </select>
               </div>
               <div>
@@ -228,8 +231,8 @@ export default function SimulatePage() {
                 <div className="panel" style={{ padding: '16px' }}>
                   <div className="panel-header" style={{ marginBottom: '8px' }}>Total System Delay</div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-safe)' }}>{simResults?.delay_delta}m</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>vs Baseline (+{simResults?.baseline_delay}m)</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-safe)' }}>{simResults?.optimized_delay}m</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>vs Baseline ({simResults?.delay_delta != null ? (simResults.delay_delta > 0 ? '+' : '') + simResults.delay_delta : ''}m)</span>
                   </div>
                 </div>
                 <div className="panel" style={{ padding: '16px' }}>
@@ -280,44 +283,126 @@ export default function SimulatePage() {
                 </table>
               </div>
 
-              {/* Gantt Timeline Mock */}
-              <div className="panel" style={{ padding: '16px', position: 'relative' }}>
-                <div className="panel-header" style={{ marginBottom: '16px' }}>Time-Space Gantt Projection</div>
-                
-                {/* Y-axis stations */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', marginBottom: '24px', opacity: 0.5 }}>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-space-mono)', color: 'var(--text-muted)' }}>NDLS</div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-space-mono)', color: 'var(--text-muted)' }}>MTJ</div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-space-mono)', color: 'var(--text-muted)' }}>AGC</div>
-                </div>
-
-                {/* X-axis time */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--bg-border)', paddingTop: '8px', opacity: 0.5 }}>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-jetbrains)' }}>15:00</div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-jetbrains)' }}>16:00</div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-jetbrains)' }}>17:00</div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-jetbrains)' }}>18:00</div>
-                </div>
-
-                {/* Train paths (SVG SVG layer) */}
-                <svg style={{ position: 'absolute', inset: '40px 16px 40px 60px', width: 'calc(100% - 76px)', height: 'calc(100% - 80px)' }} preserveAspectRatio="none">
-                  {/* Baseline (dashed) */}
-                  <line x1="0%" y1="0%" x2="60%" y2="100%" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="4 4" />
-                  <line x1="20%" y1="100%" x2="80%" y2="0%" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="4 4" />
-                  
-                  {/* Optimized (solid) */}
-                  <line x1="0%" y1="0%" x2="40%" y2="100%" stroke="var(--accent-primary)" strokeWidth="2.5" />
-                  <line x1="30%" y1="100%" x2="50%" y2="50%" stroke="var(--accent-warn)" strokeWidth="2.5" />
-                  <line x1="50%" y1="50%" x2="70%" y2="50%" stroke="var(--accent-warn)" strokeWidth="2.5" /> {/* Loop hold */}
-                  <line x1="70%" y1="50%" x2="90%" y2="0%" stroke="var(--accent-warn)" strokeWidth="2.5" />
-                </svg>
-
-                <div style={{ position: 'absolute', right: '24px', top: '24px', display: 'flex', gap: '16px', fontSize: '11px', fontFamily: 'var(--font-space-mono)' }}>
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <div style={{ width: '12px', height: '2px', background: 'var(--text-muted)' }} /> Baseline
+              {/* Dynamic Gantt Timeline */}
+              <div className="panel" style={{ padding: '16px', minHeight: '300px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <span className="panel-header">Time-Space Gantt Projection</span>
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '10px', fontFamily: 'var(--font-space-mono)' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#00E676' }} /> PROCEED
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#FFD600' }} /> HOLD
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#FF5252' }} /> REROUTE
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <div style={{ width: '12px', height: '2px', background: 'var(--accent-primary)' }} /> Optimized Flight Path
+                </div>
+                
+                <div style={{ position: 'relative', height: '200px', display: 'flex', gap: '12px' }}>
+                  {/* Y-axis Labels (Trains) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', width: '80px', borderRight: '1px solid var(--bg-border)' }}>
+                    {Array.from(new Set((simResults?.schedule || []).map((s: any) => s.train_number))).map((tn: any) => (
+                      <div key={tn} style={{ fontSize: '10px', fontFamily: 'var(--font-space-mono)', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                        {tn}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* SVG Layer */}
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <svg style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                     {(() => {
+                        const schedule = simResults?.schedule || [];
+                        console.log('Gantt schedule data:', schedule);
+                        if (schedule.length === 0) return (
+                          <text x="50%" y="50%" fill="var(--text-muted)" fontSize="12" textAnchor="middle">
+                            No schedule data returned from solver
+                          </text>
+                        );
+
+                        const uniqueTrains = Array.from(new Set(schedule.map((s: any) => s.train_number))) as string[];
+                        const rowHeight = 100 / uniqueTrains.length;
+
+                        // Check if scheduled_arrival has meaningful spread
+                        const arrivals = schedule.map((s: any) => Number(s.scheduled_arrival) || 0);
+                        const minT = Math.min(...arrivals);
+                        const maxT = Math.max(...arrivals);
+                        const hasRealTime = maxT - minT > 3600; // at least 1 hour spread in seconds
+
+                        const range = hasRealTime ? (maxT - minT) : (schedule.length * 900); // 15min per slot fallback
+
+                        const formatSecs = (s: number) => {
+                          const h = Math.floor(s / 3600) % 24;
+                          const m = Math.floor((s % 3600) / 60);
+                          return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                        };
+
+                        return (
+                          <>
+                            {/* Grid lines */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => (
+                              <g key={i}>
+                                <line
+                                  x1={`${pct * 100}%`} y1="0" x2={`${pct * 100}%`} y2="100%"
+                                  stroke="var(--bg-border)" strokeWidth="1" strokeDasharray="4 4"
+                                />
+                                <text
+                                  x={`${pct * 100}%`} y="110%"
+                                  fill="var(--text-muted)" fontSize="9" textAnchor="middle" fontFamily="var(--font-jetbrains)"
+                                >
+                                  {hasRealTime ? formatSecs(minT + pct * range) : `+${Math.round(pct * schedule.length * 15)}m`}
+                                </text>
+                              </g>
+                            ))}
+
+                            {/* Data Bars — index-based fallback if no real time spread */}
+                            {schedule.map((entry: any, i: number) => {
+                              const trainIdx = uniqueTrains.indexOf(entry.train_number);
+                              const slotWidth = 100 / schedule.length;
+
+                              // Use real time if available, otherwise spread evenly by index
+                              const startPct = hasRealTime
+                                ? ((arrivals[i] - minT) / range) * 100
+                                : i * slotWidth;
+
+                              const delayMins = Number(entry.delay_minutes) || 0;
+                              const widthPct = hasRealTime
+                                ? Math.max(((delayMins * 60) / range) * 100, 3)
+                                : Math.max(slotWidth * 0.4, 3);
+
+                              const color = entry.action === 'PROCEED' ? '#00E676'
+                                : entry.action === 'HOLD' ? '#FFD600'
+                                : '#FF5252';
+
+                              return (
+                                <g key={i}>
+                                  <rect
+                                    x={`${startPct}%`}
+                                    y={`${trainIdx * rowHeight + 5}%`}
+                                    width={`${widthPct}%`}
+                                    height={`${rowHeight * 0.7}%`}
+                                    fill={color}
+                                    fillOpacity="0.5"
+                                    stroke={color}
+                                    strokeWidth="1"
+                                    rx="2"
+                                  />
+                                  <text
+                                    x={`${startPct + widthPct / 2}%`}
+                                    y={`${trainIdx * rowHeight + rowHeight / 2 + 3}%`}
+                                    fill="white" fontSize="8" textAnchor="middle" fontFamily="var(--font-space-mono)"
+                                  >
+                                    {delayMins > 0 ? `${delayMins}m` : entry.action?.slice(0, 4) || '—'}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
+                    </svg>
                   </div>
                 </div>
               </div>
