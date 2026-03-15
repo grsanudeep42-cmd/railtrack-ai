@@ -27,7 +27,7 @@ export default function SimulatePage() {
   const [disruptionDuration, setDisruptionDuration] = useState(120);
   const [simResults, setSimResults] = useState<any>(null);
 
-  const { data: trains = [] } = useQuery({
+  const { data: trains = [], isLoading: trainsLoading, error: trainsError } = useQuery({
     queryKey: ['trains'],
     queryFn: async () => {
       const token = getClientToken();
@@ -171,7 +171,7 @@ export default function SimulatePage() {
         <aside style={{ width: '320px', background: 'var(--bg-surface)', borderRight: '1px solid var(--bg-border)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           <div style={{ padding: '16px', borderBottom: '1px solid var(--bg-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-space-mono)', fontSize: '14px', fontWeight: 700 }}>Scenario Simulator</h2>
-            <button className="btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setSimState('IDLE')}>Reset</button>
+            <button className="btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => { setSimState('IDLE'); setSimResults(null); }}>Reset</button>
           </div>
 
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -184,13 +184,23 @@ export default function SimulatePage() {
                   <button className="btn-ghost" style={{ fontSize: '10px', padding: '2px 4px' }} onClick={() => setSelectedTrains([])}>Clear</button>
                 </div>
               </div>
-              <select className="input" multiple style={{ height: '120px' }} value={selectedTrains} onChange={e => setSelectedTrains(Array.from(e.target.selectedOptions, option => option.value))}>
-                {trains.map(t => (
-                  <option key={t.id} value={t.id} style={{ padding: '4px', background: selectedTrains.includes(t.id) ? 'var(--bg-active)' : 'transparent' }}>
-                    {t.id} — {t.origin} → {t.destination}
-                  </option>
-                ))}
-              </select>
+              {trainsError ? (
+                <div style={{ padding: '8px', fontSize: '11px', color: 'var(--accent-danger)', fontFamily: 'var(--font-space-mono)' }}>
+                  Failed to load trains. Please refresh.
+                </div>
+              ) : trainsLoading ? (
+                <div style={{ padding: '8px', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)', fontStyle: 'italic' }}>
+                  Loading trains…
+                </div>
+              ) : (
+                <select className="input" multiple style={{ height: '120px' }} value={selectedTrains} onChange={e => setSelectedTrains(Array.from(e.target.selectedOptions, option => option.value))}>
+                  {trains.map(t => (
+                    <option key={t.id} value={t.id} style={{ padding: '4px', background: selectedTrains.includes(t.id) ? 'var(--bg-active)' : 'transparent' }}>
+                      {t.id} — {t.origin} → {t.destination}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Event Type */}

@@ -104,7 +104,7 @@ export default function AnalyticsPage() {
   };
 
   // ── Fetch real KPIs from backend ─────────────────────────────────────────
-  const { data: kpiData, isLoading: kpiLoading } = useQuery({
+  const { data: kpiData, isLoading: kpiLoading, error: kpiError } = useQuery({
     queryKey: ['analytics-kpis'],
     queryFn: async () => {
       const token = getClientToken();
@@ -311,6 +311,20 @@ export default function AnalyticsPage() {
           </div>
 
           {/* KPI Row */}
+          {kpiError ? (
+            <div style={{ padding: '16px', fontSize: '13px', color: 'var(--accent-danger)', fontFamily: 'var(--font-space-mono)' }}>
+              Failed to load KPI data. Please refresh.
+            </div>
+          ) : kpiLoading ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="panel" style={{ padding: '24px', minHeight: '100px' }}>
+                  <div style={{ background: 'var(--bg-elevated)', borderRadius: '6px', height: '12px', width: '60%', marginBottom: '16px', animation: 'pulse-live 1.4s ease-in-out infinite' }} />
+                  <div style={{ background: 'var(--bg-elevated)', borderRadius: '6px', height: '32px', width: '40%', animation: 'pulse-live 1.4s ease-in-out infinite' }} />
+                </div>
+              ))}
+            </div>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <KPICard 
               label="Avg Delay" 
@@ -367,6 +381,7 @@ export default function AnalyticsPage() {
               loading={kpiLoading} 
             />
           </div>
+          )}
 
           {/* Charts Row 1 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
@@ -385,7 +400,7 @@ export default function AnalyticsPage() {
               ) : (
                 <>
                   <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <LineChart data={delayData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
                         <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
@@ -415,7 +430,7 @@ export default function AnalyticsPage() {
               ) : (
                 <>
                   <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={throughputData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
                         <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
@@ -448,7 +463,7 @@ export default function AnalyticsPage() {
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
                 <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <AreaChart data={aiAcceptanceData}>
                       <defs>
                         <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">

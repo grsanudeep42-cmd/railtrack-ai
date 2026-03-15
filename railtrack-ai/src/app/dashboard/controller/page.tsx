@@ -39,6 +39,7 @@ export default function ControllerDashboard() {
   const { user, logout } = useAuth();
   const [aiAssist, setAiAssist] = useState(true);
   const [showAI, setShowAI] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeConflict, setActiveConflict] = useState<Conflict | null>(null);
   const [decisions, setDecisions] = useState<any[]>([]);
   // State for tracking live data from RapidAPI
@@ -408,13 +409,22 @@ export default function ControllerDashboard() {
             style={{ padding: '6px 12px', fontSize: '12px', fontFamily: 'var(--font-space-mono)' }}>
             Sign Out
           </button>
+          <button
+            onClick={() => setSidebarOpen(o => !o)}
+            className="btn-ghost"
+            style={{ padding: '6px 8px', fontSize: '14px', marginRight: '4px' }}
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            {sidebarOpen ? '◀' : '▶'}
+          </button>
         </div>
       </header>
 
       {/* Main 3-column layout */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-        {/* ── LEFT COLUMN (240px) ── */}
+        {/* ── LEFT COLUMN (240px) — hidden on mobile when closed ── */}
+        {sidebarOpen && (
         <aside style={{ width: '240px', flexShrink: 0, background: 'var(--bg-surface)', borderRight: '1px solid var(--bg-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Section info */}
           <div style={{ padding: '16px', borderBottom: '1px solid var(--bg-border)' }}>
@@ -617,6 +627,7 @@ export default function ControllerDashboard() {
             </button>
           </div>
         </aside>
+        )}
 
         {/* ── CENTER COLUMN ── */}
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
