@@ -39,10 +39,15 @@ router = APIRouter()
 # value = (fetched_at: float unix timestamp, payload: dict)
 _live_cache: Dict[str, Tuple[float, dict]] = {}
 
-CACHE_TTL_SECONDS = 300           # minimum interval between RapidAPI calls per train
+# Per-train exponential backoff TTL (seconds). Doubled on each 429; reset on success.
+_backoff_ttl: Dict[str, int] = {}
+_BACKOFF_MAX = 1800  # 30 minutes maximum backoff per train
+
+CACHE_TTL_SECONDS = 300           # base interval between RapidAPI calls per train
 BROADCAST_INTERVAL_SECONDS = 300  # how often the loop fires (5 min)
 MAX_API_CALLS_PER_CYCLE = 3       # max RapidAPI calls in one broadcast pass
 MIN_GAP_BETWEEN_CALLS = 10        # seconds — global guard between any two API calls
+MAX_CONSECUTIVE_429S = 5          # circuit breaker: skip cycle if this many 429s in a row
 
 RAPIDAPI_KEY  = os.getenv("RAPIDAPI_KEY", "")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "indian-railway-irctc.p.rapidapi.com")
@@ -98,6 +103,9 @@ async def _fetch_rapidapi_live(train_number: str) -> Optional[dict]:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, headers=headers, timeout=8.0)
 
+        if resp.status_code == 429:
+            logger.warning("RapidAPI 429 rate-limited for train %s", train_number)
+            return {"__rate_limited__": True}   # sentinel — caller handles backoff
         if resp.status_code == 400:
             # Train not running today — not an error, just no data
             return None
@@ -193,41 +201,62 @@ async def _broadcast_live_telemetry():
     # 3. Real path: fetch from RapidAPI (respecting per-train cache TTL)
     global _global_last_api_call
     api_calls_this_cycle = 0
+    consecutive_429s = 0
 
     for train_id in running_trains:
         digits_only = "".join(c for c in train_id if c.isdigit())
         lookup_id   = digits_only if digits_only else train_id
 
-        cached_at, cached_payload = _live_cache.get(train_id, (0.0, {}))
-
-        cache_fresh = (now - cached_at) < CACHE_TTL_SECONDS and cached_payload
-
-        if cache_fresh:
-            # Cache still fresh — use it directly, no API call needed
-            live = cached_payload
-        elif (
-            api_calls_this_cycle >= MAX_API_CALLS_PER_CYCLE
-            or (now - _global_last_api_call) < MIN_GAP_BETWEEN_CALLS
-        ):
-            # Rate-limit guard hit — use stale cache if available, else skip
+        # Circuit breaker: if too many 429s this cycle, serve stale/skip rest
+        if consecutive_429s >= MAX_CONSECUTIVE_429S:
+            logger.warning("Circuit breaker tripped: %d consecutive 429s — serving cache only", consecutive_429s)
+            cached_at, cached_payload = _live_cache.get(train_id, (0.0, {}))
             if cached_payload:
                 live = cached_payload
             else:
                 continue
         else:
-            # Fetch fresh from RapidAPI
-            _global_last_api_call = now
-            api_calls_this_cycle += 1
-            fetched = await _fetch_rapidapi_live(lookup_id)
-            if fetched:
-                _live_cache[train_id] = (now, fetched)
-                live = fetched
-            elif cached_payload:
-                # API failed but we have a stale result — use it
+            # Determine effective TTL for this train (may be backed off)
+            effective_ttl = _backoff_ttl.get(train_id, CACHE_TTL_SECONDS)
+            cached_at, cached_payload = _live_cache.get(train_id, (0.0, {}))
+            cache_fresh = (now - cached_at) < effective_ttl and cached_payload
+
+            if cache_fresh:
                 live = cached_payload
+            elif (
+                api_calls_this_cycle >= MAX_API_CALLS_PER_CYCLE
+                or (now - _global_last_api_call) < MIN_GAP_BETWEEN_CALLS
+            ):
+                if cached_payload:
+                    live = cached_payload
+                else:
+                    continue
             else:
-                # No data at all — skip this train
-                continue
+                # Fetch fresh from RapidAPI
+                _global_last_api_call = now
+                api_calls_this_cycle += 1
+                fetched = await _fetch_rapidapi_live(lookup_id)
+
+                if fetched and fetched.get("__rate_limited__"):
+                    # 429 — double this train's backoff TTL, up to the max
+                    current_ttl = _backoff_ttl.get(train_id, CACHE_TTL_SECONDS)
+                    _backoff_ttl[train_id] = min(current_ttl * 2, _BACKOFF_MAX)
+                    consecutive_429s += 1
+                    logger.info("Train %s backoff TTL now %ds", train_id, _backoff_ttl[train_id])
+                    if cached_payload:
+                        live = cached_payload
+                    else:
+                        continue
+                elif fetched:
+                    # Success — reset backoff for this train
+                    _backoff_ttl.pop(train_id, None)
+                    consecutive_429s = 0
+                    _live_cache[train_id] = (now, fetched)
+                    live = fetched
+                elif cached_payload:
+                    live = cached_payload
+                else:
+                    continue
 
         # 4. Build the telemetry event matching the field names the frontend reads:
         #    telemetry.type, telemetry.train_id, telemetry.delay, telemetry.timestamp

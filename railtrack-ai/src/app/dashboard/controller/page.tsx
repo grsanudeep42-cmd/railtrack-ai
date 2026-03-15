@@ -140,6 +140,7 @@ export default function ControllerDashboard() {
       return res.json() as Promise<Train[]>;
     },
     refetchInterval: 10000,
+    staleTime: 30000,
     placeholderData: (previousData: any) => previousData,
   });
 
@@ -163,10 +164,12 @@ export default function ControllerDashboard() {
       })) as Conflict[];
     },
     refetchInterval: 10000,
+    staleTime: 15000,
   });
 
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [connectionState, setConnectionState] = useState<'ws' | 'polling'>('ws');
+  const [wsStatus, setWsStatus] = useState<'live' | 'reconnecting' | 'reconnected'>('live');
 
   // Disruptions feed
   const { data: disruptions = [], isLoading: loadingDisruptions } = useQuery<{ icon: string; text: string; time: string; severity: string }[]>({
@@ -182,6 +185,7 @@ export default function ControllerDashboard() {
       return res.json();
     },
     refetchInterval: 10000,
+    staleTime: 30000,
     enabled: !!user,
   });
 
@@ -192,18 +196,26 @@ export default function ControllerDashboard() {
   useEffect(() => {
     let ws: WebSocket;
     let retryCount = 0;
-    const maxRetries = 3;
     let reconnectTimeout: NodeJS.Timeout;
+    let reconnectedTimeout: NodeJS.Timeout;
 
     const connect = () => {
       try {
-        const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
+        const wsUrl = process.env.NEXT_PUBLIC_WS_URL ||
           `${API_BASE.replace('https', 'wss').replace('http', 'ws')}/ws/telemetry`;
         ws = new WebSocket(wsUrl);
-        
+
         ws.onopen = () => {
+          const wasReconnecting = retryCount > 0;
           retryCount = 0;
           setConnectionState('ws');
+          if (wasReconnecting) {
+            // Show green 'Reconnected' flash for 2 seconds
+            setWsStatus('reconnected');
+            reconnectedTimeout = setTimeout(() => setWsStatus('live'), 2000);
+          } else {
+            setWsStatus('live');
+          }
         };
 
         ws.onmessage = (e) => {
@@ -229,19 +241,22 @@ export default function ControllerDashboard() {
         };
 
         ws.onerror = () => {
-          // Silent error
+          // Silent — onclose will handle retry
         };
 
         ws.onclose = () => {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const backoff = Math.pow(2, retryCount) * 1000;
-            reconnectTimeout = setTimeout(connect, backoff);
+          retryCount++;
+          // Cap backoff at 30s; attempt 1=1s, 2=2s, 3=4s, 4=8s, …
+          const backoffMs = Math.min(Math.pow(2, retryCount - 1) * 1000, 30000);
+          if (retryCount <= 5) {
+            setWsStatus('reconnecting');
+            reconnectTimeout = setTimeout(connect, backoffMs);
           } else {
             setConnectionState('polling');
+            setWsStatus('live'); // polling indicator takes over
           }
         };
-      } catch (err) {
+      } catch {
         setConnectionState('polling');
       }
     };
@@ -250,6 +265,7 @@ export default function ControllerDashboard() {
 
     return () => {
       clearTimeout(reconnectTimeout);
+      clearTimeout(reconnectedTimeout);
       if (ws) ws.close();
     };
   }, []);
@@ -399,9 +415,13 @@ export default function ControllerDashboard() {
           ))}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: connectionState === 'ws' ? 'var(--accent-safe)' : 'var(--accent-warn)' }} className="animate-pulse-live" />
-            {connectionState === 'ws' ? 'LIVE' : 'LIVE (polling)'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontFamily: 'var(--font-space-mono)',
+            color: wsStatus === 'reconnecting' ? '#F59E0B' : wsStatus === 'reconnected' ? 'var(--accent-safe)' : 'var(--text-muted)' }}>
+            <span style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: wsStatus === 'reconnecting' ? '#F59E0B' : wsStatus === 'reconnected' ? 'var(--accent-safe)' : connectionState === 'ws' ? 'var(--accent-safe)' : 'var(--accent-warn)',
+            }} className="animate-pulse-live" />
+            {wsStatus === 'reconnecting' ? 'RECONNECTING…' : wsStatus === 'reconnected' ? 'RECONNECTED ✓' : connectionState === 'ws' ? 'LIVE' : 'LIVE (polling)'}
           </div>
           <button
             onClick={logout}

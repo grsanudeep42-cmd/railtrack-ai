@@ -1,4 +1,4 @@
-﻿"""
+"""
 database.py â€” SQLAlchemy async engine + session factory for RailTrack AI.
 Reads DATABASE_URL from environment (loaded via python-dotenv in main.py).
 """
@@ -16,10 +16,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres
 # Create the async engine
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,          # Set True to log SQL statements during development
-    pool_pre_ping=True,  # Verify connection health before using from pool
-    pool_size=10,
-    max_overflow=20,
+    echo=False,           # Set True to log SQL statements during development
+    pool_pre_ping=True,   # Verify connection health before using from pool
+    pool_size=5,          # Reduced from 10 — Railway free tier has limits
+    max_overflow=10,
+    pool_timeout=30,      # Seconds to wait for a connection from the pool
+    pool_recycle=1800,    # Recycle connections after 30 min to avoid stale TCP
 )
 
 # Session factory â€” used by get_db() dependency

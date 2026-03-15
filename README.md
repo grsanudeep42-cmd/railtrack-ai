@@ -3,6 +3,7 @@
   <p><em>AI-powered railway traffic decision support system for Indian Railways section controllers. Built with OR-Tools CP-SAT, FastAPI, and Next.js.</em></p>
 
   [![Live Demo](https://img.shields.io/badge/Live--Demo-brightgreen.svg?style=for-the-badge)](https://railtrack-ai-ntlv.vercel.app)
+  [![Version](https://img.shields.io/badge/version-2.0.0-cyan.svg?style=for-the-badge)]()
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
   [![Event: SIH 2024](https://img.shields.io/badge/Event-SIH%202024-orange.svg?style=for-the-badge)]()
 </div>
@@ -34,6 +35,23 @@ AI-powered railway traffic decision support system for Indian Railways section c
     <figcaption>Performance analytics dashboard</figcaption>
   </figure>
 </div>
+
+---
+
+## What's New in v2.0.0
+
+| Patch | Change |
+|---|---|
+| P1 | Fixed 401 auth gate on `/simulate` and `/analytics` — `isAuthReady` guard added |
+| P2 | WebSocket telemetry upgraded from mock → live IRCTC RapidAPI with per-train cache |
+| P3 | RapidAPI rate limiting: 5-min broadcast cycle, MAX 3 calls/cycle, global 10s gap guard |
+| P4 | Dashboard sidebar shows live delay, station, and platform inline after Fetch |
+| P5 | Simulate page: dynamic location dropdown, aligned payload schema, AI Recommendations panel |
+| P6 | Analytics page: functional period/section dropdowns, KPI deltas from sparklines, flat-data notice |
+| P7 | Real-time conflict detection: RUNNING train pairs → ephemeral RT- conflicts merged with DB conflicts |
+| P8 | AI chat grounded in live context: active conflicts, running trains, recent decisions in system prompt |
+| P9 | Admin page: health dict normalisation, Invite via `/api/auth/register`, clickable status toggle |
+| P10 | Performance: RapidAPI exponential backoff + 5-429 circuit breaker, DB `pool_recycle`, WS reconnect amber state, React Query `staleTime` |
 
 ---
 
