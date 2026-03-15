@@ -1,27 +1,14 @@
-import smtplib
 import os
-import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import resend
 
-logger = logging.getLogger(__name__)
-
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 def send_invite_email(to_email: str, to_name: str, role: str, section: str):
-    logger.info("[EMAIL] Sending invite to %s", to_email)
-
-    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        logger.error("[EMAIL] Missing GMAIL_USER or GMAIL_APP_PASSWORD in .env — invite not sent.")
-        return
-
-    # Type assertions — we've already guarded above, these satisfy the type checker
-    assert GMAIL_USER is not None
-    assert GMAIL_APP_PASSWORD is not None
+    resend.api_key = os.getenv("RESEND_API_KEY")
     
-    subject = "You've been invited to RailTrack AI"
+    if not resend.api_key:
+        raise Exception("RESEND_API_KEY not set in environment")
+    
     setup_link = f"{FRONTEND_URL}/auth/setup?email={to_email}"
     
     html_body = f"""
@@ -40,25 +27,9 @@ def send_invite_email(to_email: str, to_name: str, role: str, section: str):
     </div>
     """
     
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"RailTrack AI <{GMAIL_USER}>"
-    msg["To"] = to_email
-    msg.attach(MIMEText(html_body, "html"))
-    
-    try:
-        logger.info("[EMAIL] Connecting to smtp.gmail.com:465...")
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.set_debuglevel(0)  # 0 = no verbose SMTP output in production
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
-            logger.info("[EMAIL] Invite email sent successfully to %s", to_email)
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error("[EMAIL] Auth failed — check GMAIL_USER and GMAIL_APP_PASSWORD: %s", e)
-        raise
-    except smtplib.SMTPException as e:
-        logger.error("[EMAIL] SMTP error: %s", e)
-        raise
-    except Exception as e:
-        logger.error("[EMAIL] Unexpected error: %s", e)
-        raise
+    resend.Emails.send({
+        "from": "RailTrack AI <onboarding@resend.dev>",
+        "to": to_email,
+        "subject": "You've been invited to RailTrack AI",
+        "html": html_body,
+    })
