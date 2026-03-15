@@ -459,8 +459,34 @@ export default function ControllerDashboard() {
                     transition: 'all 0.15s ease',
                   }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '11px', fontWeight: 700, color: PRIORITY_COLORS[train.priority] }}>
-                      {train.id}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {/* Status dot: green=on-time, amber=slight delay, red=major delay, gray=no data */}
+                      <span style={{
+                        width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                        background: liveTrainData[train.id]?.isLive
+                          ? (liveTrainData[train.id].terminated
+                              ? '#94A3B8'
+                              : liveTrainData[train.id].delay === 0
+                                ? 'var(--accent-safe)'
+                                : (liveTrainData[train.id].delay ?? 0) < 15
+                                  ? '#F59E0B'
+                                  : 'var(--accent-danger)')
+                          : liveTrainData[train.id]?.status === 'not_running'
+                            ? '#94A3B8'
+                            : 'rgba(148,163,184,0.35)',
+                        boxShadow: liveTrainData[train.id]?.isLive && !liveTrainData[train.id].terminated
+                          ? `0 0 4px ${
+                              liveTrainData[train.id].delay === 0
+                                ? 'var(--accent-safe)'
+                                : (liveTrainData[train.id].delay ?? 0) < 15
+                                  ? '#F59E0B'
+                                  : 'var(--accent-danger)'
+                            }`
+                          : 'none',
+                      }} />
+                      <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '11px', fontWeight: 700, color: PRIORITY_COLORS[train.priority] }}>
+                        {train.id}
+                      </span>
                     </span>
                     <span className={
                       liveTrainData[train.id]?.status === 'not_running' ? 'badge-rail'
@@ -487,7 +513,9 @@ export default function ControllerDashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                       {liveTrainData[train.id]?.isLive 
-                        ? <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Currently: {liveTrainData[train.id].currentStationName}</span>
+                        ? liveTrainData[train.id].terminated
+                          ? <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Terminated</span>
+                          : <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>@ {liveTrainData[train.id].currentStationName || liveTrainData[train.id].currentStation}</span>
                         : liveTrainData[train.id]?.status === 'not_running'
                           ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{train.origin} → {train.destination}</span>
                           : `${train.origin} → ${train.destination}`
@@ -525,24 +553,49 @@ export default function ControllerDashboard() {
                         : 'Fetch'}
                     </button>
                   </div>
+                  {/* Bottom row: delay + station code when live, ETA otherwise */}
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>
-                      ETA <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--text-secondary)' }}>
-                        {liveTrainData[train.id]?.isLive && liveTrainData[train.id].expectedArrivalNdls ? liveTrainData[train.id].expectedArrivalNdls : train.eta}
-                      </span>
-                      &nbsp;· {Math.round(train.speed)} km/h
-                    </span>
-                    {liveTrainData[train.id]?.isLive && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ 
-                          animation: 'pulse-live 1.5s ease-in-out infinite', 
-                          display: 'inline-block', width: '6px', height: '6px', 
-                          borderRadius: '50%', background: 'var(--accent-safe)' 
-                        }} />
-                        <span style={{ color: 'var(--accent-safe)', fontFamily: 'var(--font-space-mono)', fontSize: '9px', fontWeight: 700 }}>
-                          LIVE
+                    {liveTrainData[train.id]?.isLive && !liveTrainData[train.id].terminated ? (
+                      <>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{
+                            color: liveTrainData[train.id].delay === 0
+                              ? 'var(--accent-safe)'
+                              : (liveTrainData[train.id].delay ?? 0) < 15
+                                ? '#F59E0B'
+                                : 'var(--accent-danger)',
+                            fontFamily: 'var(--font-jetbrains)',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                          }}>
+                            {liveTrainData[train.id].delay === 0
+                              ? '✓ On time'
+                              : `+${liveTrainData[train.id].delay}m delay`}
+                          </span>
+                          {liveTrainData[train.id].currentStation && (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                              · {liveTrainData[train.id].currentStation}
+                            </span>
+                          )}
                         </span>
-                      </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ 
+                            animation: 'pulse-live 1.5s ease-in-out infinite', 
+                            display: 'inline-block', width: '6px', height: '6px', 
+                            borderRadius: '50%', background: 'var(--accent-safe)' 
+                          }} />
+                          <span style={{ color: 'var(--accent-safe)', fontFamily: 'var(--font-space-mono)', fontSize: '9px', fontWeight: 700 }}>
+                            LIVE
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <span>
+                        ETA <span style={{ fontFamily: 'var(--font-jetbrains)', color: 'var(--text-secondary)' }}>
+                          {liveTrainData[train.id]?.isLive && liveTrainData[train.id].expectedArrivalNdls ? liveTrainData[train.id].expectedArrivalNdls : train.eta}
+                        </span>
+                        &nbsp;· {Math.round(train.speed)} km/h
+                      </span>
                     )}
                   </div>
                 </div>
