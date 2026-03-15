@@ -139,7 +139,6 @@ export default function ControllerDashboard() {
       return res.json() as Promise<Train[]>;
     },
     refetchInterval: 10000,
-    // @ts-expect-error keepPreviousData is removed in React Query v5
     keepPreviousData: true,
   } as any) as { data: Train[] | undefined; error: any };
 
