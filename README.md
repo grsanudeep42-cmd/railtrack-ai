@@ -1,193 +1,181 @@
-# RailTrack AI 🚂
+<div align="center">
+  <h1>RailTrack AI</h1>
+  <p><em>AI-powered railway traffic decision support system for Indian Railways section controllers. Built with OR-Tools CP-SAT, FastAPI, and Next.js.</em></p>
 
-**Intelligent Railway Management System** for section controllers of Indian Railways.
+  [![Live Demo](https://img.shields.io/badge/Live--Demo-brightgreen.svg?style=for-the-badge)](https://railtrack-ai-ntlv.vercel.app)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+  [![Event: SIH 2024](https://img.shields.io/badge/Event-SIH%202024-orange.svg?style=for-the-badge)]()
+</div>
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)](https://nextjs.org)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-316192?logo=postgresql)](https://postgresql.org)
-[![OR-Tools](https://img.shields.io/badge/OR--Tools-CP--SAT-4285F4?logo=google)](https://developers.google.com/optimization)
-
----
-
-## Overview
-
-RailTrack AI provides real-time decision support for section controllers managing train traffic on the Indian Railways network. The system combines live IRCTC data, AI-assisted conflict detection, and OR-Tools optimization to help controllers minimize delays and maximize throughput.
+AI-powered railway traffic decision support system for Indian Railways section controllers. Built with **OR-Tools CP-SAT**, **FastAPI**, and **Next.js**.
 
 ---
 
-## Tech Stack
+## Screenshots
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Next.js 15, TypeScript, TailwindCSS, TanStack Query |
-| **Backend** | FastAPI, Python 3.11, SQLAlchemy (async), Alembic |
-| **Database** | PostgreSQL 16 |
-| **AI/Optimization** | OR-Tools CP-SAT Solver, Groq (Llama 3.1) |
-| **Auth** | JWT (python-jose), bcrypt (passlib) |
-| **Email** | Gmail SMTP via App Password |
-| **Live Data** | IRCTC RapidAPI |
+<div align="center">
+  <figure>
+    <img src="docs/screenshots/login.png" alt="Role-based login with Google OAuth" width="800"/>
+    <figcaption>Role-based login with Google OAuth</figcaption>
+  </figure>
+  <br/>
+  <figure>
+    <img src="docs/screenshots/controller-dashboard.png" alt="Live controller dashboard with real-time train map" width="800"/>
+    <figcaption>Live controller dashboard with real-time train map</figcaption>
+  </figure>
+  <br/>
+  <figure>
+    <img src="docs/screenshots/simulator-results.png" alt="OR-Tools CP-SAT conflict resolution results" width="800"/>
+    <figcaption>OR-Tools CP-SAT conflict resolution results</figcaption>
+  </figure>
+  <br/>
+  <figure>
+    <img src="docs/screenshots/analytics.png" alt="Performance analytics dashboard" width="800"/>
+    <figcaption>Performance analytics dashboard</figcaption>
+  </figure>
+</div>
 
 ---
 
 ## Features
 
-- 🚆 **Real-time Train Dashboard** — live status, delays, and section assignments
-- 🧠 **AI-Powered Schedule Optimization** — OR-Tools CP-SAT solver minimises total delay under disruption scenarios
-- 💬 **AI Chat Assistant** — Groq-powered assistant with live DB context (trains, conflicts)
-- 📊 **Analytics & KPIs** — punctuality %, avg delay, throughput, conflict rates with sparkline history
-- 🛡️ **Admin Panel** — user management (invite, edit, delete), system health telemetry
-- ✉️ **Email Invite System** — invite users via Gmail SMTP; invited accounts activate via `/auth/setup`
-- 🔐 **Role-Based Access Control** — `ADMIN` / `CONTROLLER` / `SUPERVISOR` / `LOGISTICS`
-- 🔒 **Authenticated WebSocket** — live train state sync via JWT-protected WS connection
+<table width="100%">
+  <tr>
+    <td width="33%">🚆 Real-time train tracking on NR-42 corridor</td>
+    <td width="33%">🤖 AI conflict detection & resolution</td>
+    <td width="33%">⚡ <b>Google OR-Tools CP-SAT v9.x</b> precedence optimization</td>
+  </tr>
+  <tr>
+    <td width="33%">📊 Performance analytics & KPI dashboards</td>
+    <td width="33%">👥 Role-based access (Admin/Controller/Supervisor/Logistics)</td>
+    <td width="33%">🔐 <b>JWT</b> auth + <b>Google OAuth</b></td>
+  </tr>
+  <tr>
+    <td width="33%">📧 Email invite system (<b>Resend API</b>)</td>
+    <td width="33%">🏥 Real-time system health monitoring</td>
+    <td width="33%">🔌 IRCTC live train data integration</td>
+  </tr>
+  <tr>
+    <td width="33%">📡 WebSocket live telemetry</td>
+    <td width="33%">🚫 403 guard for non-admin routes</td>
+    <td width="33%">🌐 Production deployed (<b>Vercel</b> + <b>Railway</b>)</td>
+  </tr>
+</table>
 
 ---
 
-## Project Structure
+## Architecture Diagram
 
-```
-RailTrack/
-├── backend/                  # FastAPI + Python
-│   ├── routers/              # auth, trains, simulate, analytics, admin, ai, conflicts
-│   ├── utils/email.py        # Gmail SMTP invite sender
-│   ├── algorithm/solver.py   # OR-Tools CP-SAT precedence optimizer
-│   ├── models.py             # SQLAlchemy ORM models
-│   ├── database.py           # Async engine + session factory
-│   ├── auth_utils.py         # JWT + bcrypt + FastAPI dependencies
-│   ├── alembic/              # Database migration scripts
-│   ├── seed.py               # Initial data seeder
-│   ├── .env.example          # Template — copy to .env
-│   └── main.py               # FastAPI app entry point
-└── railtrack-ai/             # Next.js 15 frontend
-    ├── src/app/              # Pages: dashboard, simulate, analytics, admin, auth
-    ├── src/components/       # Reusable components
-    ├── src/lib/              # API client, auth context
-    ├── src/middleware.ts     # JWT route protection (Edge)
-    └── .env.example          # Template — copy to .env.local
+```ascii
+Browser (Next.js 16.1.6) ──── REST + WebSocket ────► FastAPI (Python 3.11)
+                                                        │          │
+                                                   PostgreSQL   OR-Tools
+                                                   (Railway)   CP-SAT v9.x
+                                                        │
+                                                   IRCTC RapidAPI
+                                                   Resend Email API
 ```
 
 ---
 
-## Local Setup
+## Demo Credentials
+
+> **Note**: Test the live application at [https://railtrack-ai-ntlv.vercel.app](https://railtrack-ai-ntlv.vercel.app). Use the credentials below to explore different dashboards.
+> 
+> | Role | Email | Password | Access Description |
+> |------|-------|----------|--------------------|
+> | Admin | admin@demo.rail | demo1234 | Full system configuration and user management. |
+> | Controller | controller@demo.rail | demo1234 | Traffic monitoring and AI conflict resolution. |
+> | Supervisor | supervisor@demo.rail | demo1234 | System analytics and high-level reports. |
+> | Logistics | logistics@demo.rail | demo1234 | Freight scheduling and delayed train tracking. |
+> | Guest | guest@demo.rail | demo1234 | Read-only access to select dashboards. |
+
+---
+
+## Quick Start
+
+<details>
+<summary><b>Click to expand local setup instructions</b></summary>
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 20+
-- PostgreSQL 16
+- Node.js (for **TypeScript**, **TailwindCSS**, **TanStack Query**, **NextAuth.js v4** frontend)
+- **Python 3.11** (for backend)
+- **PostgreSQL** database
 
-### Backend
+### 1. Backend Setup
 
 ```bash
 cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 1. Install Python dependencies
+# Install requirements including SQLAlchemy async and asyncpg
 pip install -r requirements.txt
-
-# 2. Configure environment
 cp .env.example .env
-# Edit .env — fill in DATABASE_URL, SECRET_KEY, GMAIL_USER, GMAIL_APP_PASSWORD, etc.
 
-# 3. Run database migrations
+# Run database migrations
 alembic upgrade head
 
-# 4. Seed initial data (trains, users, conflicts)
-python seed.py
-
-# 5. Start the FastAPI dev server
-uvicorn main:app --reload --port 8000
+# Start FastAPI server
+uvicorn app.main:app --reload
 ```
 
-API docs available at: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### Frontend
+### 2. Frontend Setup
 
 ```bash
 cd railtrack-ai
-
-# 1. Install dependencies
 npm install
 
-# 2. Configure environment
 cp .env.example .env.local
-# Edit .env.local — set NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# 3. Start the Next.js dev server
+# Start Next.js development server
 npm run dev
 ```
 
-App available at: [http://localhost:3000](http://localhost:3000)
+</details>
 
 ---
 
-## Environment Variables
+## API Reference
 
-### Backend (`backend/.env`)
+API Documentation: [https://railtrack-ai-production.up.railway.app/docs](https://railtrack-ai-production.up.railway.app/docs)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string (asyncpg driver) |
-| `SECRET_KEY` | ✅ | JWT signing secret — generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `GMAIL_USER` | ✅ | Gmail address for invite emails |
-| `GMAIL_APP_PASSWORD` | ✅ | Gmail App Password (not your account password) |
-| `ALLOWED_ORIGINS` | ✅ | Comma-separated list of allowed CORS origins |
-| `FRONTEND_URL` | ✅ | Base URL of the frontend — used in invite email links |
-| `RAPIDAPI_KEY` | ✅ | RapidAPI key for IRCTC live train tracker |
-| `RAPIDAPI_HOST` | ✅ | `indian-railway-irctc.p.rapidapi.com` |
-| `GROQ_API_KEY` | ✅ | Groq API key for the AI chat assistant |
-| `ALGORITHM` | ❌ | JWT algorithm (default: `HS256`) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | JWT expiry in minutes (default: `1440`) |
-| `GOOGLE_CLIENT_ID` | ❌ | Google OAuth client ID (for Google Sign-In) |
-
-See `backend/.env.example` for a full template.
-
-### Frontend (`railtrack-ai/.env.local`)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | ✅ | Backend API base URL (e.g. `http://localhost:8000`) |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ❌ | Google OAuth client ID (for Google Sign-In button) |
-
-See `railtrack-ai/.env.example` for a full template.
+| Method | Path | Auth Required | Description |
+|--------|------|---------------|-------------|
+| `POST` | `/api/auth/login` | No | Authenticate user and issue **bcrypt**-hashed JWT |
+| `GET`  | `/api/trains/live` | Yes | Retrieve real-time train positions from IRCTC |
+| `POST` | `/api/solver/run` | Yes (Controller) | Execute Google OR-Tools CP-SAT resolution |
+| `GET`  | `/api/analytics/kpi` | Yes (Admin/Supervisor) | Fetch performance analytics data |
+| `GET`  | `/ws/telemetry` | Token in query | WebSocket endpoint for live map updates |
 
 ---
 
 ## Deployment
 
-### Backend → Railway.app
-
-1. Create a Railway project and add a PostgreSQL plugin.
-2. Set all required environment variables in Railway's service settings.
-3. Deploy — Railway auto-detects the Python `Dockerfile`.
-
-### Frontend → Vercel
-
-1. Push to GitHub and import the repo into Vercel.
-2. Set root directory to `railtrack-ai`.
-3. Set `NEXT_PUBLIC_API_URL` to your Railway backend URL.
-
-### Post-Deploy
-
-```bash
-# Run migrations (from Railway CLI or shell)
-alembic upgrade head
-
-# Seed initial data
-python seed.py
-```
+- **Vercel** (Frontend): [https://railtrack-ai-ntlv.vercel.app](https://railtrack-ai-ntlv.vercel.app)
+- **Railway** (Backend API + DB): [https://railtrack-ai-production.up.railway.app/docs](https://railtrack-ai-production.up.railway.app/docs)
 
 ---
 
-## Security
+## What Makes This Different
 
-- Passwords hashed with **bcrypt** (passlib).
-- All protected routes require a valid **JWT Bearer token**.
-- Admin routes additionally verify the `ADMIN` role.
-- Invited users (`hashed_password="INVITED"`, `is_active=False`) **cannot log in** until they complete account setup via `/auth/setup`.
-- CORS origins are controlled via `ALLOWED_ORIGINS` env var — no wildcard `*` in production.
-- `.env` and `.env.local` are excluded from git via `.gitignore`.
+- **Complex CP-SAT Solver Integration:** Modeling railway preemption and scheduling using a strict constraint-programming approach is mathematically rigorous and non-trivial compared to standard CRUD applications.
+- **Asynchronous FastAPI + PostgreSQL:** Fully async Python backend utilizing `asyncpg` combined with SQLAlchemy async ensures high concurrency when processing real-time WebSocket telemetry and computationally heavy solver results.
+- **Three-Layer Role-Based Auth:** A robust security model that seamlessly mixes standard NextAuth.js on the edge, custom JWT validation in FastAPI middlewares, and granular row-level and route-level authorization restrictions.
+
+---
+
+## Built By
+
+Built solo by Anudeep GRS as Team Lead for SIH 2024
 
 ---
 
 ## License
 
 MIT
+
+<div align="right">
+  <a href="#railtrack-ai">Back to top</a>
+</div>
