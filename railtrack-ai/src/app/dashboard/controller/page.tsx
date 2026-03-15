@@ -126,7 +126,7 @@ export default function ControllerDashboard() {
     }
   };
 
-  const { data: trains = [], error: trainsErr } = useQuery({
+  const { data: trains = [], error: trainsErr } = useQuery<Train[]>({
     queryKey: ['trains'],
     queryFn: async () => {
       const token = getClientToken();
@@ -139,7 +139,9 @@ export default function ControllerDashboard() {
       return res.json() as Promise<Train[]>;
     },
     refetchInterval: 10000,
-  });
+    // @ts-expect-error keepPreviousData is removed in React Query v5
+    keepPreviousData: true,
+  } as any) as { data: Train[] | undefined; error: any };
 
   const { data: serverConflicts = [], error: confsErr } = useQuery({
     queryKey: ['conflicts'],
