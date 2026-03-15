@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useQuery } from '@tanstack/react-query';
 import { API_BASE } from '@/lib/api';
@@ -75,18 +76,19 @@ function KPICard({ label, value, suffix = '', precision = 1, delta, data, color,
 }
 
 export default function AnalyticsPage() {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
+  const router = useRouter();
 
   // ── Fetch real KPIs from backend ─────────────────────────────────────────
   const { data: kpiData, isLoading: kpiLoading } = useQuery({
     queryKey: ['analytics-kpis'],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) throw new Error('No token');
+      if (!token) { router.push('/login'); throw new Error('No token'); }
       const res = await fetch(`${API_BASE}/api/analytics/kpis`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       if (!res.ok) throw new Error('Failed to fetch KPIs');
       return res.json() as Promise<{
         punctuality_pct: number;
@@ -104,72 +106,78 @@ export default function AnalyticsPage() {
       }>;
     },
     refetchInterval: 30000,
+    enabled: isAuthReady,
   });
 
   const { data: delayData = [], isLoading: delayLoading } = useQuery({
     queryKey: ['analytics-delay', 7],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) return [];
+      if (!token) { router.push('/login'); return []; }
       const res = await fetch(`${API_BASE}/api/analytics/delay-chart?period=7`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<any[]>;
-    }
+    },
+    enabled: isAuthReady,
   });
 
   const { data: throughputData = [], isLoading: throughputLoading } = useQuery({
     queryKey: ['analytics-throughput', 7],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) return [];
+      if (!token) { router.push('/login'); return []; }
       const res = await fetch(`${API_BASE}/api/analytics/throughput-chart?period=7`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<any[]>;
-    }
+    },
+    enabled: isAuthReady,
   });
 
   const { data: heatmapData = [], isLoading: heatmapLoading } = useQuery({
     queryKey: ['analytics-heatmap'],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) return [];
+      if (!token) { router.push('/login'); return []; }
       const res = await fetch(`${API_BASE}/api/analytics/heatmap`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<{day: string, hour: number, value: number}[]>;
-    }
+    },
+    enabled: isAuthReady,
   });
 
   const { data: incidentsData = [], isLoading: incidentsLoading } = useQuery({
     queryKey: ['analytics-incidents'],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) return [];
+      if (!token) { router.push('/login'); return []; }
       const res = await fetch(`${API_BASE}/api/analytics/incidents`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<any[]>;
     },
     refetchInterval: 30000,
+    enabled: isAuthReady,
   });
 
   const { data: aiAcceptanceData = [], isLoading: aiAcceptanceLoading } = useQuery({
     queryKey: ['analytics-ai-acceptance'],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) return [];
+      if (!token) { router.push('/login'); return []; }
       const res = await fetch(`${API_BASE}/api/analytics/ai-acceptance?period=14`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<{date: string, acceptance: number, total: number}[]>;
-    }
+    },
+    enabled: isAuthReady,
   });
 
   // Custom tooltips
@@ -189,6 +197,33 @@ export default function AnalyticsPage() {
     }
     return null;
   };
+
+  // Show loading spinner while auth is hydrating
+  if (!isAuthReady) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-base)',
+        flexDirection: 'column',
+        gap: '16px',
+      }}>
+        <div style={{
+          width: '32px', height: '32px',
+          border: '3px solid var(--bg-border)',
+          borderTopColor: 'var(--accent-primary)',
+          borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite',
+        }} />
+        <div style={{ fontFamily: 'var(--font-space-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
+          AUTHENTICATING...
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>

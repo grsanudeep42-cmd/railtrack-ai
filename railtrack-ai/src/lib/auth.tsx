@@ -18,6 +18,7 @@ interface AuthContextValue {
   login: (credentials: { email: string; password: string; role: UserRole }) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
+  isAuthReady: boolean;
   error: string | null;
 }
 
@@ -43,13 +44,18 @@ function getCookie(name: string): string | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   // Hydrate user from /api/auth/me on mount if a token cookie exists
   useEffect(() => {
     const token = getCookie('railtrack_token');
-    if (!token) return;
+    if (!token) {
+      // No token — auth is ready immediately (unauthenticated)
+      setIsAuthReady(true);
+      return;
+    }
 
     fetch(`${API_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -71,6 +77,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {
         deleteCookie('railtrack_token');
         deleteCookie('rt_role');
+      })
+      .finally(() => {
+        // Auth hydration is complete regardless of success or failure
+        setIsAuthReady(true);
       });
   }, []);
 
@@ -131,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading, error }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading, isAuthReady, error }}>
       {children}
     </AuthContext.Provider>
   );
@@ -148,6 +158,6 @@ export function useAuth() {
  * Pass the cookie string from headers/cookies().
  */
 export function getTokenFromCookie(cookieString: string): string | null {
-  const match = cookieString.match(/(?:^|;\s*)railtrack_token=([^;]*)/);
+  const match = cookieString.match(/(?:^|;\\s*)railtrack_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : null;
 }

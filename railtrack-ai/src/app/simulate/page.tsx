@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import LiveTrackMap from '@/components/LiveTrackMap';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Train } from '@/lib/mockData';
@@ -16,7 +17,8 @@ function getClientToken() {
 type SimState = 'IDLE' | 'RUNNING' | 'RESULTS';
 
 export default function SimulatePage() {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
+  const router = useRouter();
   const [simState, setSimState] = useState<SimState>('IDLE');
   const [selectedTrains, setSelectedTrains] = useState<string[]>([]);
   const [objective, setObjective] = useState('DELAY');
@@ -29,13 +31,14 @@ export default function SimulatePage() {
     queryKey: ['trains'],
     queryFn: async () => {
       const token = getClientToken();
-      if (!token) throw new Error('No token');
+      if (!token) { router.push('/login'); throw new Error('No token'); }
       const res = await fetch(`${API_BASE}/api/trains/?section=${user?.section || 'NR-42'}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       return res.json() as Promise<Train[]>;
-    }
+    },
+    enabled: isAuthReady,
   });
 
   // Pre-select ALL trains by default when data loads
@@ -48,15 +51,16 @@ export default function SimulatePage() {
   const simulateMutation = useMutation({
     mutationFn: async (payload: any) => {
       const token = getClientToken();
+      if (!token) { router.push('/login'); throw new Error('No token'); }
       const res = await fetch(`${API_BASE}/api/simulate/run`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
-      if (res.status === 401) window.location.href = '/login';
+      if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
       if (!res.ok) throw new Error('Failed to run simulation');
       return res.json();
     },
@@ -78,6 +82,33 @@ export default function SimulatePage() {
     console.log('Sending to solver:', JSON.stringify(payload));
     simulateMutation.mutate(payload);
   };
+
+  // Show loading spinner while auth is hydrating
+  if (!isAuthReady) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-base)',
+        flexDirection: 'column',
+        gap: '16px',
+      }}>
+        <div style={{
+          width: '32px', height: '32px',
+          border: '3px solid var(--bg-border)',
+          borderTopColor: 'var(--accent-primary)',
+          borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite',
+        }} />
+        <div style={{ fontFamily: 'var(--font-space-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>
+          AUTHENTICATING...
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
@@ -325,13 +356,12 @@ export default function SimulatePage() {
                         const uniqueTrains = Array.from(new Set(schedule.map((s: any) => s.train_number))) as string[];
                         const rowHeight = 100 / uniqueTrains.length;
 
-                        // Check if scheduled_arrival has meaningful spread
                         const arrivals = schedule.map((s: any) => Number(s.scheduled_arrival) || 0);
                         const minT = Math.min(...arrivals);
                         const maxT = Math.max(...arrivals);
-                        const hasRealTime = maxT - minT > 3600; // at least 1 hour spread in seconds
+                        const hasRealTime = maxT - minT > 3600;
 
-                        const range = hasRealTime ? (maxT - minT) : (schedule.length * 900); // 15min per slot fallback
+                        const range = hasRealTime ? (maxT - minT) : (schedule.length * 900);
 
                         const formatSecs = (s: number) => {
                           const h = Math.floor(s / 3600) % 24;
@@ -341,7 +371,6 @@ export default function SimulatePage() {
 
                         return (
                           <>
-                            {/* Grid lines */}
                             {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => (
                               <g key={i}>
                                 <line
@@ -357,12 +386,10 @@ export default function SimulatePage() {
                               </g>
                             ))}
 
-                            {/* Data Bars — index-based fallback if no real time spread */}
                             {schedule.map((entry: any, i: number) => {
                               const trainIdx = uniqueTrains.indexOf(entry.train_number);
                               const slotWidth = 100 / schedule.length;
 
-                              // Use real time if available, otherwise spread evenly by index
                               const startPct = hasRealTime
                                 ? ((arrivals[i] - minT) / range) * 100
                                 : i * slotWidth;
