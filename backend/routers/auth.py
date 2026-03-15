@@ -13,8 +13,10 @@ from datetime import timedelta, datetime
 from typing import Optional, List
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -32,6 +34,7 @@ from auth_utils import (
 load_dotenv(override=True)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -125,12 +128,14 @@ async def _write_audit(db: AsyncSession, user_id: str, action: str, entity: str 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Authenticate with email + password.
     Returns a signed JWT on success, 401 on failure.
+    Rate-limited to 5 attempts per minute per IP.
     """
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     user: Optional[User] = result.scalar_one_or_none()
 
     if user is None or not user.hashed_password:
@@ -139,7 +144,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Invalid credentials",
         )
 
-    if not verify_password(request.password, user.hashed_password):
+    if not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

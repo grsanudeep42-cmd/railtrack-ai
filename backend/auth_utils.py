@@ -31,8 +31,12 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plaintext password against its stored bcrypt hash."""
+def verify_password(plain_password: str, hashed_password: str | None) -> bool:
+    """Verify a plaintext password against its stored bcrypt hash.
+    Returns False (never raises) if hash is None (Google-only user) or 'INVITED'.
+    """
+    if not hashed_password or hashed_password == "INVITED":
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 

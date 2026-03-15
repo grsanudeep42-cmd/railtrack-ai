@@ -22,9 +22,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPExceptio
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from database import create_all_tables
 from routers import auth, trains, conflicts, simulate, analytics, admin, ai, disruptions
+from routers.auth import limiter
 from ws.hub import router as websocket_router
 from auth_utils import verify_token
 
@@ -47,6 +50,10 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# ─── Rate limiting ────────────────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

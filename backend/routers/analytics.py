@@ -433,9 +433,10 @@ class SummaryResponse(BaseModel):
 @router.get("/summary", response_model=SummaryResponse)
 async def get_analytics_summary(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Public summary stats for landing page.
+    Summary stats — requires authentication.
     - trains_today: count trains updated/active today
     - avg_delay_reduction: week vs week % improvement
     - uptime_percentage: resolved / total conflicts proxy
