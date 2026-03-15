@@ -13,3 +13,4 @@ ortools>=9.4.1874
 groq>=0.4.0
 slowapi>=0.1.9
 python-dotenv>=1.0.0
+asyncpg>=0.27.0
