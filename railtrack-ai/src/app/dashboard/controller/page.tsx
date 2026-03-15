@@ -204,7 +204,27 @@ export default function ControllerDashboard() {
           setConnectionState('ws');
         };
 
-        ws.onmessage = (e) => console.log('Telemetry:', e.data);
+        ws.onmessage = (e) => {
+          try {
+            const telemetry = JSON.parse(e.data);
+            console.log('Telemetry:', telemetry);
+            if (telemetry.type === 'TELEMETRY' && telemetry.train_id) {
+              setLiveTrainData(prev => ({
+                ...prev,
+                [telemetry.train_id]: {
+                  ...prev[telemetry.train_id],
+                  status: 'ok',
+                  isLive: true,
+                  loading: false,
+                  delay: telemetry.delay,
+                  lastUpdated: telemetry.timestamp,
+                }
+              }));
+            }
+          } catch {
+            // ignore parse errors
+          }
+        };
 
         ws.onerror = () => {
           // Silent error
@@ -584,6 +604,7 @@ export default function ControllerDashboard() {
             <LiveTrackMap
               conflictSegment={activeConflict ? 'SEG-04' : null}
               onTrainClick={setSelectedTrain}
+              liveTrainData={liveTrainData}
             />
 
             {/* AI panel overlay */}

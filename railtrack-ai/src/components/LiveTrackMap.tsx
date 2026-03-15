@@ -42,11 +42,18 @@ function interpolate(from: { x: number; y: number }, to: { x: number; y: number 
 }
 
 interface Props {
-  conflictSegment?: string | null; // segment id to flash
+  conflictSegment?: string | null;
   onTrainClick?: (id: string) => void;
+  liveTrainData?: Record<string, {
+    status: 'ok' | 'not_running' | 'loading';
+    delay?: number;
+    lastUpdated?: string;
+    isLive: boolean;
+    loading: boolean;
+  }>;
 }
 
-export default function LiveTrackMap({ conflictSegment, onTrainClick }: Props) {
+export default function LiveTrackMap({ conflictSegment, onTrainClick, liveTrainData }: Props) {
   const { user } = useAuth();
   const [trains, setTrains] = useState<TrainPosition[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -72,27 +79,25 @@ export default function LiveTrackMap({ conflictSegment, onTrainClick }: Props) {
   // Sync API trains to internal animation state
   useEffect(() => {
     setTrains(prev => {
-      // Keep existing progress for trains still in list
-      const newTrainList = apiTrains.map((t: any, idx: number) => {
+      return apiTrains.map((t: any, idx: number) => {
         const existing = prev.find(pt => pt.trainId === t.id);
-        
-        // Deterministic segment mapping based on train ID if they don't have GPS
-        // We cycle through segments to spread them out
         const segIdx = parseInt(t.id.replace(/\D/g, '') || idx.toString()) % TRACK_SEGMENTS.length;
         const seg = TRACK_SEGMENTS[segIdx];
-        
+        const liveData = liveTrainData?.[t.id];
+        const speed = liveData?.isLive && t.speed
+          ? t.speed * 0.0000005
+          : (t.speed || 60) * 0.0000005;
         return {
           trainId: t.id,
           priority: t.priority as TrainPriority,
-          progress: existing ? existing.progress : (Math.random()), // initial random pos
+          progress: existing ? existing.progress : Math.random(),
           segFrom: seg.from,
           segTo: seg.to,
-          speed: (t.speed || 60) * 0.0000005 // scale speed for SVG progress
+          speed,
         };
       });
-      return newTrainList;
     });
-  }, [apiTrains]);
+  }, [apiTrains, liveTrainData]);
 
   // Animate train positions
   useEffect(() => {
