@@ -39,11 +39,16 @@ router = APIRouter()
 # value = (fetched_at: float unix timestamp, payload: dict)
 _live_cache: Dict[str, Tuple[float, dict]] = {}
 
-CACHE_TTL_SECONDS = 60          # minimum interval between RapidAPI calls per train
-BROADCAST_INTERVAL_SECONDS = 30  # how often the loop fires
+CACHE_TTL_SECONDS = 300           # minimum interval between RapidAPI calls per train
+BROADCAST_INTERVAL_SECONDS = 300  # how often the loop fires (5 min)
+MAX_API_CALLS_PER_CYCLE = 3       # max RapidAPI calls in one broadcast pass
+MIN_GAP_BETWEEN_CALLS = 10        # seconds — global guard between any two API calls
 
 RAPIDAPI_KEY  = os.getenv("RAPIDAPI_KEY", "")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "indian-railway-irctc.p.rapidapi.com")
+
+# Global timestamp of the last RapidAPI call made (any train)
+_global_last_api_call: float = 0.0
 
 
 # ── Connection manager ────────────────────────────────────────────────────────
@@ -186,17 +191,33 @@ async def _broadcast_live_telemetry():
         return
 
     # 3. Real path: fetch from RapidAPI (respecting per-train cache TTL)
+    global _global_last_api_call
+    api_calls_this_cycle = 0
+
     for train_id in running_trains:
         digits_only = "".join(c for c in train_id if c.isdigit())
         lookup_id   = digits_only if digits_only else train_id
 
         cached_at, cached_payload = _live_cache.get(train_id, (0.0, {}))
 
-        if (now - cached_at) < CACHE_TTL_SECONDS and cached_payload:
-            # Cache still fresh — use it directly
+        cache_fresh = (now - cached_at) < CACHE_TTL_SECONDS and cached_payload
+
+        if cache_fresh:
+            # Cache still fresh — use it directly, no API call needed
             live = cached_payload
+        elif (
+            api_calls_this_cycle >= MAX_API_CALLS_PER_CYCLE
+            or (now - _global_last_api_call) < MIN_GAP_BETWEEN_CALLS
+        ):
+            # Rate-limit guard hit — use stale cache if available, else skip
+            if cached_payload:
+                live = cached_payload
+            else:
+                continue
         else:
             # Fetch fresh from RapidAPI
+            _global_last_api_call = now
+            api_calls_this_cycle += 1
             fetched = await _fetch_rapidapi_live(lookup_id)
             if fetched:
                 _live_cache[train_id] = (now, fetched)
@@ -248,17 +269,33 @@ async def websocket_endpoint(
             await websocket.close(code=http_status.WS_1008_POLICY_VIOLATION)
             return
 
+    # Evict any existing connection from the same client host to prevent duplicates
+    client_host = websocket.client.host if websocket.client else None
+    if client_host:
+        stale = [
+            conn for conn in list(manager.active_connections)
+            if conn.client and conn.client.host == client_host
+        ]
+        for old_conn in stale:
+            try:
+                await old_conn.close(code=1000)
+            except Exception:
+                pass
+            manager.disconnect(old_conn)
+
     await manager.connect(websocket)
 
     async def send_periodic():
         """Background task: broadcast real telemetry every BROADCAST_INTERVAL_SECONDS."""
+        # Brief stabilisation delay before the first broadcast
+        await asyncio.sleep(2)
         while True:
-            await asyncio.sleep(BROADCAST_INTERVAL_SECONDS)
             try:
                 await _broadcast_live_telemetry()
             except Exception as exc:
                 # Never crash the loop — log and continue
                 logger.error("Telemetry broadcast error: %s", exc)
+            await asyncio.sleep(BROADCAST_INTERVAL_SECONDS)
 
     task = asyncio.create_task(send_periodic())
 
