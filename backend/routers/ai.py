@@ -54,15 +54,11 @@ async def ai_chat(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
-    print(f"AI chat called with: {body}")
     """
-    Real AI chat using Anthropic Claude haiku-3-5.
+    Real AI chat using Groq Llama 3.
     Fetches live trains and conflicts for the user's section,
-    injects them as context, and returns Claude's grounded reply.
+    injects them as context, and returns a grounded reply.
     """
-    import os
-    key = os.getenv("GROQ_API_KEY")
-    print(f"DEBUG GROQ KEY: {key[:10] if key else 'NOT FOUND'}")
 
     if not GROQ_API_KEY:
         raise HTTPException(
@@ -115,11 +111,7 @@ async def ai_chat(
         )
         reply = completion.choices[0].message.content if completion.choices else "No response from AI."
     except Exception as e:
-        print(f"Groq error: {e}")
         logger.error("Groq API error: %s", e)
-        raise HTTPException(status_code=502, detail=f"GROQ_API_KEY error: {str(e)}")
-    except Exception as e:
-        logger.error("Unexpected AI chat error: %s", e)
-        raise HTTPException(status_code=500, detail="AI service temporarily unavailable.")
+        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
 
     return ChatResponse(reply=reply)

@@ -11,14 +11,15 @@ GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 def send_invite_email(to_email: str, to_name: str, role: str, section: str):
-    # Debug: print what credentials are loaded
-    print(f"[EMAIL DEBUG] GMAIL_USER={GMAIL_USER}")
-    print(f"[EMAIL DEBUG] APP_PASSWORD length={len(GMAIL_APP_PASSWORD) if GMAIL_APP_PASSWORD else 0}")
-    print(f"[EMAIL DEBUG] Sending to={to_email}")
-    
+    logger.info("[EMAIL] Sending invite to %s", to_email)
+
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        print("[EMAIL ERROR] Missing GMAIL_USER or GMAIL_APP_PASSWORD in .env")
+        logger.error("[EMAIL] Missing GMAIL_USER or GMAIL_APP_PASSWORD in .env — invite not sent.")
         return
+
+    # Type assertions — we've already guarded above, these satisfy the type checker
+    assert GMAIL_USER is not None
+    assert GMAIL_APP_PASSWORD is not None
     
     subject = "You've been invited to RailTrack AI"
     setup_link = f"{FRONTEND_URL}/auth/setup?email={to_email}"
@@ -46,19 +47,18 @@ def send_invite_email(to_email: str, to_name: str, role: str, section: str):
     msg.attach(MIMEText(html_body, "html"))
     
     try:
-        print("[EMAIL DEBUG] Connecting to smtp.gmail.com:465...")
+        logger.info("[EMAIL] Connecting to smtp.gmail.com:465...")
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.set_debuglevel(1)  # verbose SMTP logs
+            server.set_debuglevel(0)  # 0 = no verbose SMTP output in production
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            print(f"[EMAIL DEBUG] Login successful, sending...")
             server.sendmail(GMAIL_USER, to_email, msg.as_string())
-            print(f"[EMAIL SUCCESS] Email sent to {to_email}")
+            logger.info("[EMAIL] Invite email sent successfully to %s", to_email)
     except smtplib.SMTPAuthenticationError as e:
-        print(f"[EMAIL ERROR] Auth failed — wrong App Password or GMAIL_USER mismatch: {e}")
+        logger.error("[EMAIL] Auth failed — check GMAIL_USER and GMAIL_APP_PASSWORD: %s", e)
         raise
     except smtplib.SMTPException as e:
-        print(f"[EMAIL ERROR] SMTP error: {e}")
+        logger.error("[EMAIL] SMTP error: %s", e)
         raise
     except Exception as e:
-        print(f"[EMAIL ERROR] Unexpected error: {e}")
+        logger.error("[EMAIL] Unexpected error: %s", e)
         raise
