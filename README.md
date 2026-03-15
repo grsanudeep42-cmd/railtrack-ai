@@ -42,16 +42,16 @@ AI-powered railway traffic decision support system for Indian Railways section c
 
 | Patch | Change |
 |---|---|
-| P1 | Fixed 401 auth gate on `/simulate` and `/analytics` — `isAuthReady` guard added |
-| P2 | WebSocket telemetry upgraded from mock → live IRCTC RapidAPI with per-train cache |
-| P3 | RapidAPI rate limiting: 5-min broadcast cycle, MAX 3 calls/cycle, global 10s gap guard |
-| P4 | Dashboard sidebar shows live delay, station, and platform inline after Fetch |
-| P5 | Simulate page: dynamic location dropdown, aligned payload schema, AI Recommendations panel |
-| P6 | Analytics page: functional period/section dropdowns, KPI deltas from sparklines, flat-data notice |
-| P7 | Real-time conflict detection: RUNNING train pairs → ephemeral RT- conflicts merged with DB conflicts |
-| P8 | AI chat grounded in live context: active conflicts, running trains, recent decisions in system prompt |
-| P9 | Admin page: health dict normalisation, Invite via `/api/auth/register`, clickable status toggle |
-| P10 | Performance: RapidAPI exponential backoff + 5-429 circuit breaker, DB `pool_recycle`, WS reconnect amber state, React Query `staleTime` |
+| P1 | Fixed 401 auth gate on `/simulate` and `/analytics` — `isAuthReady` guard prevents API calls before JWT hydration |
+| P2 | WebSocket telemetry upgraded from mock random data → real IRCTC RapidAPI live positions with per-train 60s cache |
+| P3 | Dashboard sidebar shows live delay, current station and colored status dot inline after Fetch |
+| P4 | Simulate page: dynamic location + train dropdowns from DB, fixed POST payload schema, OR-Tools results panel |
+| P5 | Analytics page: functional period/section dropdowns, KPI deltas computed from sparklines, flat-data notice |
+| P6 | Real-time conflict detection: RUNNING train pairs auto-detected → ephemeral RT- conflicts merged with DB conflicts |
+| P7 | AI Assistant grounded in live context: active conflicts, running trains, recent decisions injected every message |
+| P8 | UI/UX polish: mobile sidebar toggle, loading skeletons, error boundaries, chart warnings fixed, reset clears results |
+| P9 | Admin page: System Health with colored dots + refresh, Invite User modal, Edit user form, status toggle |
+| P10 | Performance: RapidAPI exponential backoff + circuit breaker, WebSocket reconnect with amber state, React Query staleTime, DB connection pooling |
 
 ---
 
@@ -85,13 +85,13 @@ AI-powered railway traffic decision support system for Indian Railways section c
 ## Architecture Diagram
 
 ```ascii
-Browser (Next.js 16.1.6) ──── REST + WebSocket ────► FastAPI (Python 3.11)
-                                                        │          │
-                                                   PostgreSQL   OR-Tools
-                                                   (Railway)   CP-SAT v9.x
-                                                        │
-                                                   IRCTC RapidAPI
-                                                   Resend Email API
+Browser (Next.js) ──── REST + WebSocket ────► FastAPI (Python 3.11)
+                                                   │        │        │
+                                              PostgreSQL  OR-Tools  Groq
+                                              (Railway)  CP-SAT    Llama 3
+                                                   │
+                                              IRCTC RapidAPI
+                                              Resend Email API
 ```
 
 ---
@@ -181,6 +181,8 @@ API Documentation: [https://railtrack-ai-production.up.railway.app/docs](https:/
 - **Complex CP-SAT Solver Integration:** Modeling railway preemption and scheduling using a strict constraint-programming approach is mathematically rigorous and non-trivial compared to standard CRUD applications.
 - **Asynchronous FastAPI + PostgreSQL:** Fully async Python backend utilizing `asyncpg` combined with SQLAlchemy async ensures high concurrency when processing real-time WebSocket telemetry and computationally heavy solver results.
 - **Three-Layer Role-Based Auth:** A robust security model that seamlessly mixes standard NextAuth.js on the edge, custom JWT validation in FastAPI middlewares, and granular row-level and route-level authorization restrictions.
+- **Live AI Assistant with Real-Time Context:** Unlike static chatbots, the AI assistant receives a fresh system prompt on every message containing actual conflict IDs, running train names, delays, and recent controller decisions — making it genuinely context-aware rather than hallucinating.
+- **Real-Time Conflict Engine:** Auto-detects crossing conflicts by grouping RUNNING trains by section and generating ephemeral RT- conflict pairs — no manual seeding required. Severity is inferred from train priority (EXPRESS pair = HIGH).
 
 ---
 
