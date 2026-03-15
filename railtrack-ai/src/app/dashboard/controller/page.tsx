@@ -139,8 +139,8 @@ export default function ControllerDashboard() {
       return res.json() as Promise<Train[]>;
     },
     refetchInterval: 10000,
-    keepPreviousData: true,
-  } as any) as { data: Train[] | undefined; error: any };
+    placeholderData: (previousData: any) => previousData,
+  });
 
   const { data: serverConflicts = [], error: confsErr } = useQuery({
     queryKey: ['conflicts'],

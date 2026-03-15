@@ -74,6 +74,7 @@ export default function LiveTrackMap({ conflictSegment, onTrainClick, liveTrainD
       return res.json();
     },
     refetchInterval: 15000,
+    placeholderData: (previousData: any) => previousData,
   });
 
   // Sync API trains to internal animation state
