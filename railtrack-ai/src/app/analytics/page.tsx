@@ -79,6 +79,30 @@ export default function AnalyticsPage() {
   const { user, isAuthReady } = useAuth();
   const router = useRouter();
 
+  // ── Filter state ──────────────────────────────────────────────────────────
+  const [period, setPeriod] = useState(7);
+  const [section, setSection] = useState(user?.section ?? 'All');
+
+  // Keep section in sync if user loads after mount
+  useEffect(() => {
+    if (user?.section) setSection(user.section);
+  }, [user?.section]);
+
+  // Helper: compute period-over-period delta from sparkline array (last two values)
+  const sparklineDelta = (arr: number[]): number => {
+    if (arr.length < 2) return 0;
+    return parseFloat((arr[arr.length - 1] - arr[arr.length - 2]).toFixed(1));
+  };
+
+  // Helper: true when all numeric values in a chart data array for a given key are identical
+  const isChartFlat = (data: any[], keys: string[]): boolean => {
+    if (!data || data.length === 0) return false;
+    return keys.every(k => {
+      const vals = data.map(d => Number(d[k] ?? 0));
+      return vals.every(v => v === vals[0]);
+    });
+  };
+
   // ── Fetch real KPIs from backend ─────────────────────────────────────────
   const { data: kpiData, isLoading: kpiLoading } = useQuery({
     queryKey: ['analytics-kpis'],
@@ -110,11 +134,11 @@ export default function AnalyticsPage() {
   });
 
   const { data: delayData = [], isLoading: delayLoading } = useQuery({
-    queryKey: ['analytics-delay', 7],
+    queryKey: ['analytics-delay', period],
     queryFn: async () => {
       const token = getClientToken();
       if (!token) { router.push('/login'); return []; }
-      const res = await fetch(`${API_BASE}/api/analytics/delay-chart?period=7`, {
+      const res = await fetch(`${API_BASE}/api/analytics/delay-chart?period=${period}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
@@ -124,11 +148,11 @@ export default function AnalyticsPage() {
   });
 
   const { data: throughputData = [], isLoading: throughputLoading } = useQuery({
-    queryKey: ['analytics-throughput', 7],
+    queryKey: ['analytics-throughput', period],
     queryFn: async () => {
       const token = getClientToken();
       if (!token) { router.push('/login'); return []; }
-      const res = await fetch(`${API_BASE}/api/analytics/throughput-chart?period=7`, {
+      const res = await fetch(`${API_BASE}/api/analytics/throughput-chart?period=${period}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
@@ -167,11 +191,11 @@ export default function AnalyticsPage() {
   });
 
   const { data: aiAcceptanceData = [], isLoading: aiAcceptanceLoading } = useQuery({
-    queryKey: ['analytics-ai-acceptance'],
+    queryKey: ['analytics-ai-acceptance', period],
     queryFn: async () => {
       const token = getClientToken();
       if (!token) { router.push('/login'); return []; }
-      const res = await fetch(`${API_BASE}/api/analytics/ai-acceptance?period=14`, {
+      const res = await fetch(`${API_BASE}/api/analytics/ai-acceptance?period=${period}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) { router.push('/login'); throw new Error('Unauthorized'); }
@@ -261,17 +285,27 @@ export default function AnalyticsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ fontFamily: 'var(--font-space-mono)', fontSize: '24px', fontWeight: 700 }}>Performance Analytics</h1>
-              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>Section {user?.section || 'NR-42'} · Last 7 Days Overview</p>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>Section {user?.section || 'NR-42'} · Last {period} Day{period === 1 ? '' : 's'} Overview</p>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
-              <select className="input" style={{ width: '200px', height: '36px', padding: '0 12px' }}>
-                <option>Last 7 Days</option>
-                <option>Last 30 Days</option>
-                <option>Yesterday</option>
+              <select
+                className="input"
+                style={{ width: '200px', height: '36px', padding: '0 12px' }}
+                value={String(period)}
+                onChange={e => setPeriod(Number(e.target.value))}
+              >
+                <option value="7">Last 7 Days</option>
+                <option value="30">Last 30 Days</option>
+                <option value="1">Yesterday</option>
               </select>
-              <select className="input" style={{ width: '200px', height: '36px', padding: '0 12px' }}>
-                <option>Section: {user?.section || 'NR-42'} (Default)</option>
-                <option>Zone: Northern (All)</option>
+              <select
+                className="input"
+                style={{ width: '200px', height: '36px', padding: '0 12px' }}
+                value={section}
+                onChange={e => setSection(e.target.value)}
+              >
+                <option value={user?.section || 'NR-42'}>Section: {user?.section || 'NR-42'} (Default)</option>
+                <option value="All">Zone: Northern (All)</option>
               </select>
             </div>
           </div>
@@ -282,7 +316,7 @@ export default function AnalyticsPage() {
               label="Avg Delay" 
               value={kpiData?.avg_delay_minutes ?? 0} 
               suffix="m" 
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_delay ?? [])} 
               data={kpiData?.sparkline_delay ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-warn)" 
               loading={kpiLoading} 
@@ -291,7 +325,7 @@ export default function AnalyticsPage() {
               label="Punctuality" 
               value={kpiData?.punctuality_pct ?? 0} 
               suffix="%" 
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_punctuality ?? [])} 
               data={kpiData?.sparkline_punctuality ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-safe)" 
               loading={kpiLoading} 
@@ -300,7 +334,7 @@ export default function AnalyticsPage() {
               label="Throughput" 
               value={kpiData?.throughput_today ?? 0} 
               precision={0} 
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_throughput ?? [])} 
               data={kpiData?.sparkline_throughput ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-primary)" 
               loading={kpiLoading} 
@@ -309,7 +343,7 @@ export default function AnalyticsPage() {
               label="Conflicts Resolved" 
               value={kpiData?.conflicts_resolved ?? 0} 
               precision={0}
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_conflicts ?? [])} 
               data={kpiData?.sparkline_conflicts ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-danger)" 
               loading={kpiLoading} 
@@ -318,7 +352,7 @@ export default function AnalyticsPage() {
               label="Override Rate" 
               value={kpiData?.override_rate ?? 0} 
               suffix="%" 
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_override ?? [])} 
               data={kpiData?.sparkline_override ?? [0,0,0,0,0,0,0]} 
               color="var(--text-muted)" 
               loading={kpiLoading} 
@@ -327,7 +361,7 @@ export default function AnalyticsPage() {
               label="AI Acceptance" 
               value={kpiData?.ai_acceptance_rate ?? 0} 
               suffix="%" 
-              delta={0} 
+              delta={sparklineDelta(kpiData?.sparkline_ai ?? [])} 
               data={kpiData?.sparkline_ai ?? [0,0,0,0,0,0,0]} 
               color="var(--accent-rail)" 
               loading={kpiLoading} 
@@ -349,19 +383,26 @@ export default function AnalyticsPage() {
               {delayLoading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
-                <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={delayData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <>
+                  <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={delayData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                        <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Line type="monotone" dataKey="express" stroke="#00D4FF" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                        <Line type="monotone" dataKey="freight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 4 }} />
+                        <Line type="monotone" dataKey="local" stroke="#6366F1" strokeWidth={3} dot={{ r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {isChartFlat(delayData, ['express', 'freight', 'local']) && (
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)', textAlign: 'center' }}>
+                      ℹ Insufficient data for this period — showing all-time average
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -372,19 +413,26 @@ export default function AnalyticsPage() {
               {throughputLoading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Loading...</div>
               ) : (
-                <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={throughputData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <>
+                  <div style={{ width: '100%', height: '240px', minHeight: '240px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={throughputData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-border)" vertical={false} />
+                        <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                       <Bar dataKey="express" stackId="a" fill="#00D4FF" radius={[0, 0, 4, 4]} />
                       <Bar dataKey="freight" stackId="a" fill="#F59E0B" />
                       <Bar dataKey="local" stackId="a" fill="#6366F1" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                {isChartFlat(throughputData, ['express', 'freight', 'local']) && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-space-mono)', textAlign: 'center' }}>
+                    ℹ Insufficient data for this period — showing all-time average
+                  </div>
+                )}
+                </>
               )}
             </div>
 
