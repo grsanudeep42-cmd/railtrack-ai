@@ -195,7 +195,9 @@ export default function ControllerDashboard() {
 
     const connect = () => {
       try {
-        ws = new WebSocket(`${API_BASE.replace('http', 'ws')}/ws/telemetry`);
+        const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
+          `${API_BASE.replace('https', 'wss').replace('http', 'ws')}/ws/telemetry`;
+        ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
           retryCount = 0;
