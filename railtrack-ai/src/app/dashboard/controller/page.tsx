@@ -139,6 +139,8 @@ export default function ControllerDashboard() {
       return res.json() as Promise<Train[]>;
     },
     refetchInterval: 10000,
+    staleTime: 30000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: serverConflicts = [], error: confsErr } = useQuery({
