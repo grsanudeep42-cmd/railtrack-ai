@@ -48,6 +48,28 @@ export default function SimulatePage() {
     }
   }, [trains, simState]);
 
+  // Build unique location options from fetched trains (origin + destination codes)
+  const locationOptions: { value: string; label: string }[] = (() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    trains.forEach(t => {
+      if (t.origin && !seen.has(t.origin)) {
+        seen.add(t.origin);
+        opts.push({ value: t.origin, label: t.origin });
+      }
+      if (t.destination && !seen.has(t.destination)) {
+        seen.add(t.destination);
+        opts.push({ value: t.destination, label: t.destination });
+      }
+    });
+    // Fallback to hardcoded if no trains loaded yet
+    if (opts.length === 0) {
+      opts.push({ value: 'AGC', label: 'AGC — Agra Cantt' });
+      opts.push({ value: 'GWL', label: 'GWL — Gwalior' });
+    }
+    return opts;
+  })();
+
   const simulateMutation = useMutation({
     mutationFn: async (payload: any) => {
       const token = getClientToken();
@@ -72,12 +94,16 @@ export default function SimulatePage() {
 
   const handleRun = () => {
     setSimState('RUNNING');
+    // Payload matches SimulationRequest schema exactly
     const payload = {
-      train_ids: selectedTrains,
+      train_ids: selectedTrains.length > 0 ? selectedTrains : undefined,
       disruption_type: disruptionType,
       disruption_location: disruptionLocation,
       disruption_duration_minutes: disruptionDuration,
-      objective: objective === 'DELAY' ? 'MINIMIZE_DELAY' : objective
+      objective: objective === 'DELAY' ? 'MINIMIZE_DELAY'
+               : objective === 'EXPRESS' ? 'PRIORITIZE_EXPRESS'
+               : objective === 'THROUGHPUT' ? 'MAXIMIZE_THROUGHPUT'
+               : objective,
     };
     console.log('Sending to solver:', JSON.stringify(payload));
     simulateMutation.mutate(payload);
@@ -160,7 +186,9 @@ export default function SimulatePage() {
               </div>
               <select className="input" multiple style={{ height: '120px' }} value={selectedTrains} onChange={e => setSelectedTrains(Array.from(e.target.selectedOptions, option => option.value))}>
                 {trains.map(t => (
-                  <option key={t.id} value={t.id} style={{ padding: '4px', background: selectedTrains.includes(t.id) ? 'var(--bg-active)' : 'transparent' }}>{t.id} - {t.name}</option>
+                  <option key={t.id} value={t.id} style={{ padding: '4px', background: selectedTrains.includes(t.id) ? 'var(--bg-active)' : 'transparent' }}>
+                    {t.id} — {t.origin} → {t.destination}
+                  </option>
                 ))}
               </select>
             </div>
@@ -181,9 +209,13 @@ export default function SimulatePage() {
               <div>
                 <label style={{ display: 'block', fontFamily: 'var(--font-space-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>LOCATION</label>
                 <select className="input" value={disruptionLocation} onChange={e => setDisruptionLocation(e.target.value)}>
-                  <option value="AGC">Agra Cantt (J1)</option>
-                  <option value="GWL">Gwalior (J2)</option>
-                  <option value={user?.section || 'NR-42'}>Seg: {user?.section || 'NR-42'}</option>
+                  {locationOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                  {/* Always include the user's section as an option */}
+                  {!locationOptions.find(o => o.value === (user?.section || 'NR-42')) && (
+                    <option value={user?.section || 'NR-42'}>Seg: {user?.section || 'NR-42'}</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -260,27 +292,67 @@ export default function SimulatePage() {
               {/* Metrics Header */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                 <div className="panel" style={{ padding: '16px' }}>
-                  <div className="panel-header" style={{ marginBottom: '8px' }}>Total System Delay</div>
+                  <div className="panel-header" style={{ marginBottom: '8px' }}>Optimized Delay</div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-safe)' }}>{simResults?.optimized_delay}m</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>vs Baseline ({simResults?.delay_delta != null ? (simResults.delay_delta > 0 ? '+' : '') + simResults.delay_delta : ''}m)</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-safe)' }}>{simResults?.optimized_delay ?? '—'}m</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      Baseline {simResults?.baseline_delay ?? '—'}m
+                      {simResults?.delay_delta != null
+                        ? ` (${simResults.delay_delta > 0 ? '+' : ''}${simResults.delay_delta}m)`
+                        : ''}
+                    </span>
                   </div>
                 </div>
                 <div className="panel" style={{ padding: '16px' }}>
-                  <div className="panel-header" style={{ marginBottom: '8px' }}>Throughput (trains/hr)</div>
+                  <div className="panel-header" style={{ marginBottom: '8px' }}>Throughput Retained</div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' }}>{simResults?.throughput_change}</span>
-                    <span className="badge-warn" style={{ marginBottom: '6px' }}>drop</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {simResults?.throughput_change ?? '—'}%
+                    </span>
+                    <span className={simResults?.throughput_change >= 80 ? 'badge-safe' : 'badge-warn'} style={{ marginBottom: '6px' }}>
+                      {simResults?.throughput_change >= 80 ? 'good' : 'reduced'}
+                    </span>
                   </div>
                 </div>
                 <div className="panel" style={{ padding: '16px' }}>
                   <div className="panel-header" style={{ marginBottom: '8px' }}>Conflicts Avoided</div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-primary)' }}>{simResults?.conflicts_avoided}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>Resolved recursively</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains)', fontSize: '28px', fontWeight: 700, color: 'var(--accent-primary)' }}>{simResults?.conflicts_avoided ?? '—'}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>HOLD/REROUTE actions</span>
                   </div>
                 </div>
               </div>
+
+              {/* AI Recommendations (derived from actions array) */}
+              {(simResults?.actions?.length ?? 0) > 0 && (
+                <div className="panel" style={{ padding: '16px' }}>
+                  <div className="panel-header" style={{ marginBottom: '12px' }}>AI Recommendations</div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {(simResults.actions as any[]).map((act: any, i: number) => (
+                      <li key={i} style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        <span style={{ fontFamily: 'var(--font-jetbrains)', fontWeight: 700, color: 'var(--accent-primary)' }}>{act.train}</span>
+                        {' — '}
+                        <span style={{
+                          fontWeight: 600,
+                          color: act.action === 'PROCEED' ? 'var(--accent-safe)'
+                               : act.action === 'HOLD'    ? '#F59E0B'
+                               : 'var(--accent-danger)'
+                        }}>{act.action}</span>
+                        {act.delta !== 0 && (
+                          <span style={{
+                            marginLeft: '8px',
+                            fontFamily: 'var(--font-jetbrains)',
+                            fontSize: '12px',
+                            color: act.delta < 0 ? 'var(--accent-safe)' : 'var(--accent-danger)',
+                          }}>
+                            ({act.delta > 0 ? '+' : ''}{act.delta}m delay delta)
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
 
               {/* Table Comparison */}
               <div className="panel" style={{ overflow: 'hidden' }}>
